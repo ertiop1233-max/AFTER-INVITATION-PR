@@ -1,0 +1,17 @@
+# Memory Vault - Root .htaccess for Hostinger
+# Place this file in public_html/ if the app is installed at public_html/memoryvault/
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ memoryvault/public/$1 [L,QSA]
+</IfModule>
+
+<Files .env>
+    Require all denied
+</Files>
+<Files composer.json>
+    Require all denied
+</Files>
+<Files artisan>
+    Require all denied
+</Files>
