@@ -16,12 +16,24 @@ class GoogleDriveProvider implements StorageProviderInterface
         private readonly ?string $serviceAccountKey = null,
         private readonly ?string $serviceAccountKeyFile = null,
         private readonly ?string $sharedDriveId = null,
+        private readonly ?string $storageRootFolderId = null,
     ) {}
 
     public function checkHealth(): bool
     {
         try {
-            $this->getService()->drives->get($this->sharedDriveId);
+            if ($this->sharedDriveId) {
+                $this->getService()->drives->get($this->sharedDriveId);
+            } else {
+                $rootId = $this->storageRootFolderId;
+                if (!$rootId) {
+                    Log::error('Google Drive health check failed: no root folder ID configured');
+                    return false;
+                }
+                $this->getService()->files->get($rootId, $this->baseParams([
+                    'fields' => 'id',
+                ]));
+            }
             return true;
         } catch (\Throwable $e) {
             Log::error('Google Drive health check failed', ['error' => $e->getMessage()]);
@@ -31,16 +43,18 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     public function createFolder(string $name, ?string $parentId = null): string
     {
+        $effectiveParentId = $parentId ?? $this->getRootFolderId();
+
         $file = new Google_Service_Drive_DriveFile([
             'name' => $name,
             'mimeType' => 'application/vnd.google-apps.folder',
         ]);
 
-        if ($parentId !== null) {
-            $file->setParents([$parentId]);
+        if ($effectiveParentId !== null) {
+            $file->setParents([$effectiveParentId]);
         }
 
-        $params = $this->withSupportsAllDrive([
+        $params = $this->baseParams([
             'fields' => 'id',
         ]);
 
@@ -51,16 +65,12 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     public function deleteFolder(string $folderId): void
     {
-        $params = $this->withSupportsAllDrive([]);
-
-        $this->getService()->files->delete($folderId, $params);
+        $this->getService()->files->delete($folderId, $this->baseParams([]));
     }
 
     public function deleteFile(string $fileId): void
     {
-        $params = $this->withSupportsAllDrive([]);
-
-        $this->getService()->files->delete($fileId, $params);
+        $this->getService()->files->delete($fileId, $this->baseParams([]));
     }
 
     public function createResumableUpload(string $folderId, string $fileName, string $mimeType, int $fileSize): string
@@ -71,7 +81,7 @@ class GoogleDriveProvider implements StorageProviderInterface
 
         $file->setParents([$folderId]);
 
-        $params = $this->withSupportsAllDrive([
+        $params = $this->baseParams([
             'uploadType' => 'resumable',
             'fields' => 'id,size,md5Checksum',
         ]);
@@ -100,15 +110,13 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     public function uploadSmallFile(string $folderId, string $fileName, string $mimeType, string $content): string
     {
-        $client = $this->getService()->getClient();
-
         $file = new Google_Service_Drive_DriveFile([
             'name' => $fileName,
         ]);
 
         $file->setParents([$folderId]);
 
-        $params = $this->withSupportsAllDrive([
+        $params = $this->baseParams([
             'data' => $content,
             'mimeType' => $mimeType,
             'uploadType' => 'multipart',
@@ -160,11 +168,9 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     public function getFileMetadata(string $fileId): array
     {
-        $params = $this->withSupportsAllDrive([
+        $file = $this->getService()->files->get($fileId, $this->baseParams([
             'fields' => 'id,name,size,md5Checksum,mimeType,parents',
-        ]);
-
-        $file = $this->getService()->files->get($fileId, $params);
+        ]));
 
         return [
             'id' => $file->id,
@@ -180,7 +186,7 @@ class GoogleDriveProvider implements StorageProviderInterface
     {
         $query = "'{$folderId}' in parents and name = '{$fileName}' and trashed = false";
 
-        $params = $this->withSupportsAllDrive([
+        $params = $this->listParams([
             'q' => $query,
             'fields' => 'files(id,name,size,md5Checksum,mimeType)',
             'pageSize' => 2,
@@ -206,20 +212,18 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     public function getFileStream(string $fileId): mixed
     {
-        $params = $this->withSupportsAllDrive([
-            'alt' => 'media',
-        ]);
-
-        $url = $this->getService()->files->get($fileId, $params)->getDownloadUrl();
-
-        if (!$url) {
-            throw new RuntimeException("Cannot get download URL for file {$fileId}");
-        }
-
         $client = $this->getService()->getClient();
+
+        $url = sprintf(
+            'https://www.googleapis.com/drive/v3/files/%s?alt=media',
+            $fileId
+        );
+
         $request = new \GuzzleHttp\Psr7\Request('GET', $url);
 
-        return $client->execute($request)->getBody();
+        $response = $client->execute($request);
+
+        return $response->getBody();
     }
 
     public function generateViewUrl(string $fileId): string
@@ -292,14 +296,35 @@ class GoogleDriveProvider implements StorageProviderInterface
         throw new RuntimeException('No Google service account credentials configured');
     }
 
-    private function withSupportsAllDrive(array $params): array
+    private function getRootFolderId(): ?string
+    {
+        if ($this->sharedDriveId) {
+            return $this->sharedDriveId;
+        }
+
+        return $this->storageRootFolderId;
+    }
+
+    private function baseParams(array $params): array
     {
         return array_merge([
             'supportsAllDrives' => true,
-            'includeItemsFromAllDrives' => true,
-            'corpora' => 'drive',
-            'driveId' => $this->sharedDriveId,
         ], $params);
+    }
+
+    private function listParams(array $params): array
+    {
+        $params = $this->baseParams($params);
+
+        if ($this->sharedDriveId) {
+            $params = array_merge($params, [
+                'includeItemsFromAllDrives' => true,
+                'corpora' => 'drive',
+                'driveId' => $this->sharedDriveId,
+            ]);
+        }
+
+        return $params;
     }
 
     private function getChunkSize(): int

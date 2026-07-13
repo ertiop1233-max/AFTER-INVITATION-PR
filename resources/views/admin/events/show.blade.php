@@ -51,8 +51,27 @@
     <p style="font-size:var(--font-size-sm);color:var(--color-text-secondary);margin-bottom:var(--space-3)">Share this link with guests to collect memories:</p>
     <div style="display:flex;gap:var(--space-2);align-items:center">
         <input class="input" type="text" readonly value="{{ route('upload.page', ['slug' => $event->upload_slug, 'token' => $event->upload_token]) }}" id="uploadLink" onclick="this.select()">
-        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('uploadLink').value); this.textContent='Copied!'">Copy</button>
+        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('uploadLink').value); this.textContent='Copied!'" type="button">Copy</button>
     </div>
+</div>
+
+<div class="card" style="margin-bottom:var(--space-4)">
+    <h3 style="margin-bottom:var(--space-3)">QR Code</h3>
+    @if($hasQr)
+        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+            <a href="{{ route('admin.events.qr', $event) }}" class="btn btn-primary">Download QR</a>
+            <form method="POST" action="{{ route('admin.events.qr.regenerate', $event) }}">
+                @csrf
+                <button type="submit" class="btn btn-secondary">Regenerate QR</button>
+            </form>
+        </div>
+    @else
+        <p style="color:var(--color-text-muted);margin-bottom:var(--space-3)">No QR code has been generated yet.</p>
+        <form method="POST" action="{{ route('admin.events.qr.regenerate', $event) }}">
+            @csrf
+            <button type="submit" class="btn btn-primary">Generate QR Code</button>
+        </form>
+    @endif
 </div>
 
 @if($event->description)
@@ -80,9 +99,7 @@
     @endif
 </div>
 
-<form method="POST" action="{{ route('admin.events.destroy', $event) }}" onsubmit="return confirm('Are you sure you want to permanently delete this event and all associated data?')">
-    @csrf
-    @method('DELETE')
-    <button type="submit" class="btn btn-danger">Delete Event Permanently</button>
-</form>
+<div style="margin-top:var(--space-8);padding-top:var(--space-6);border-top:1px solid var(--color-border-default)">
+    <a href="{{ route('admin.events.confirm-delete', $event) }}" class="btn btn-danger">Delete Event Permanently</a>
+</div>
 @endsection

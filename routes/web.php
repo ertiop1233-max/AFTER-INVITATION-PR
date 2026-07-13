@@ -30,10 +30,13 @@ Route::prefix('admin')->group(function () {
     Route::middleware('admin.auth')->group(function () {
         Route::get('/', [AdminDashboardController::class, 'index'])->name('admin.dashboard');
         Route::resource('events', AdminEventController::class)->names('admin.events');
+        Route::get('events/{event}/delete', [AdminEventController::class, 'confirmDelete'])->name('admin.events.confirm-delete');
         Route::post('events/{event}/close', [AdminEventController::class, 'close'])->name('admin.events.close');
         Route::post('events/{event}/reopen', [AdminEventController::class, 'reopen'])->name('admin.events.reopen');
         Route::get('events/{event}/credentials', [AdminEventController::class, 'credentials'])->name('admin.events.credentials');
         Route::post('events/{event}/credentials/reset', [AdminEventController::class, 'resetPassword'])->name('admin.events.credentials.reset');
+        Route::get('events/{event}/qr', [AdminEventController::class, 'downloadQr'])->name('admin.events.qr');
+        Route::post('events/{event}/qr/regenerate', [AdminEventController::class, 'regenerateQr'])->name('admin.events.qr.regenerate');
         Route::get('storage', [AdminStorageController::class, 'index'])->name('admin.storage');
         Route::get('health', [HealthController::class, 'check'])->name('admin.health');
     });
