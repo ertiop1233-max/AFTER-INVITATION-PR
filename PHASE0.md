@@ -6,8 +6,26 @@ This document describes how to run the Phase 0 validations (V1–V14) on the Hos
 
 1. Deploy the application to Hostinger following `DEPLOYMENT.md`.
 2. Configure `.env` with real Google Service Account credentials.
-3. Set `MEMORYVAULT_UPLOAD_STRATEGY=plan_b` as the default (Plan B is the safe default).
-4. Run migrations and seed the admin.
+3. Configure Google Drive storage (see below).
+4. Set `MEMORYVAULT_UPLOAD_STRATEGY=plan_b` as the default (Plan B is the safe default).
+5. Run migrations and seed the admin.
+
+### Google Drive Storage Configuration
+
+The application supports two storage modes. Set ONE of the following:
+
+**Mode 1 — Google Shared Drive (Google Workspace)**:
+- Set `GOOGLE_SHARED_DRIVE_ID` to the Shared Drive ID.
+- Leave `GOOGLE_STORAGE_ROOT_FOLDER_ID` empty or unset.
+- Event folders are created at the Shared Drive root.
+
+**Mode 2 — Personal Google Drive (standard Google account)**:
+- Leave `GOOGLE_SHARED_DRIVE_ID` empty.
+- Set `GOOGLE_STORAGE_ROOT_FOLDER_ID` to an existing folder ID in My Drive.
+- Create the root folder manually in Google Drive first.
+- Event folders are created inside that root folder.
+
+The mode is selected automatically based on whether `GOOGLE_SHARED_DRIVE_ID` is set.
 
 ## Validation Procedures
 
@@ -41,10 +59,13 @@ ssh user@your-hostinger-server
 ```
 If unavailable, use SFTP deployment with local builds.
 
-### V5: Shared Drive Setup
-1. Create a test event via the admin dashboard.
-2. Check that the event folder appears in the Google Shared Drive.
-3. Verify via admin → Storage page that Drive health is "Connected".
+### V5: Google Drive Storage Setup
+1. Ensure `.env` is configured for either Shared Drive mode or Personal Drive mode (see Prerequisites above).
+2. Create a test event via the admin dashboard.
+3. Check that the event folder appears in the correct location:
+   - Shared Drive mode: at the Shared Drive root.
+   - Personal Drive mode: inside the configured `GOOGLE_STORAGE_ROOT_FOLDER_ID` folder.
+4. Verify via admin → Storage page that Drive health is "Connected".
 
 ### V6: PHP Upload Limits
 ```bash

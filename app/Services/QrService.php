@@ -6,10 +6,11 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class QrService
 {
+    private const QR_FILENAME = 'qr_code.png';
+
     public function __construct(
         private readonly StorageService $storageService,
     ) {}
@@ -27,12 +28,12 @@ class QrService
             return null;
         }
 
-        $fileName = 'qr_' . Str::random(8) . '.png';
+        $this->deleteExistingQr($folderId);
 
         try {
             $fileId = $this->storageService->uploadSmallFile(
                 $folderId,
-                $fileName,
+                self::QR_FILENAME,
                 'image/png',
                 $pngData
             );
@@ -45,6 +46,22 @@ class QrService
         }
     }
 
+    public function findQrFile(string $folderId): ?array
+    {
+        return $this->storageService->findFileInFolderByName($folderId, self::QR_FILENAME);
+    }
+
+    public function getQrStream(string $folderId): mixed
+    {
+        $file = $this->findQrFile($folderId);
+
+        if (!$file) {
+            return null;
+        }
+
+        return $this->storageService->getFileStream($file['id']);
+    }
+
     public function generatePng(string $url): ?string
     {
         try {
@@ -52,7 +69,7 @@ class QrService
                 return null;
             }
 
-            if (!function_exists('imagecreate') && !extension_loaded('gd')) {
+            if (!extension_loaded('gd')) {
                 return null;
             }
 
@@ -89,6 +106,19 @@ class QrService
         } catch (\Throwable $e) {
             Log::warning('QR fallback API failed', ['error' => $e->getMessage()]);
             return null;
+        }
+    }
+
+    private function deleteExistingQr(string $folderId): void
+    {
+        $existing = $this->findQrFile($folderId);
+
+        if ($existing) {
+            try {
+                $this->storageService->deleteFile($existing['id']);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to delete existing QR code', ['error' => $e->getMessage()]);
+            }
         }
     }
 }

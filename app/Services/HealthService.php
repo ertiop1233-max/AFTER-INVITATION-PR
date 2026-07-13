@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -19,6 +20,7 @@ class HealthService
             'drive' => $this->checkDrive(),
             'drive_quota' => $this->checkDriveQuota(),
             'smtp' => $this->checkSmtp(),
+            'quota_last_checked' => $this->getQuotaLastChecked(),
         ];
     }
 
@@ -52,11 +54,23 @@ class HealthService
     private function checkDriveQuota(): ?array
     {
         try {
-            return $this->storageService->getQuotaInfo();
+            $quota = $this->storageService->getQuotaInfo();
+
+            if ($quota !== null) {
+                Cache::put('memoryvault.drive_quota', $quota, now()->addHours(1));
+                Cache::put('memoryvault.quota_last_checked', now()->toIso8601String(), now()->addHours(1));
+            }
+
+            return $quota;
         } catch (\Throwable $e) {
             Log::warning('Drive quota check failed', ['error' => $e->getMessage()]);
             return null;
         }
+    }
+
+    private function getQuotaLastChecked(): ?string
+    {
+        return Cache::get('memoryvault.quota_last_checked');
     }
 
     private function checkSmtp(): bool

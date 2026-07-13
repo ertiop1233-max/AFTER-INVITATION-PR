@@ -80,6 +80,24 @@ class EventService
         return $this->qrService->generateAndStore($url, $event->storage_root_folder_id);
     }
 
+    public function hasQrCode(Event $event): bool
+    {
+        if (!$event->storage_root_folder_id) {
+            return false;
+        }
+
+        return $this->qrService->findQrFile($event->storage_root_folder_id) !== null;
+    }
+
+    public function getQrCodeStream(Event $event): mixed
+    {
+        if (!$event->storage_root_folder_id) {
+            return null;
+        }
+
+        return $this->qrService->getQrStream($event->storage_root_folder_id);
+    }
+
     public function closeEvent(Event $event): Event
     {
         $event->update(['status' => Event::STATUS_CLOSED]);
