@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\DriveCleanupJob;
 use App\Models\Event;
 use App\Models\Media;
 use App\Models\Submission;
@@ -140,40 +139,14 @@ class SubmissionService
         return Submission::find($submissionId);
     }
 
-    public function findSubmissionBySessionKey(string $sessionKey): ?Submission
-    {
-        return Submission::where('upload_session_key', $sessionKey)->first();
-    }
-
     public function deleteSubmission(Submission $submission): void
     {
-        $resourceIds = [];
+        $submission->load('media');
 
-        if ($submission->storage_folder_id) {
-            $resourceIds[] = ['id' => $submission->storage_folder_id, 'type' => DriveCleanupJob::RESOURCE_FOLDER];
-        }
-        if ($submission->voice_storage_id) {
-            $resourceIds[] = ['id' => $submission->voice_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-        }
+        $resources = $this->cleanupService->collectSubmissionResourceIds($submission);
 
-        foreach ($submission->media as $media) {
-            if ($media->storage_id) {
-                $resourceIds[] = ['id' => $media->storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-            }
-            if ($media->thumbnail_storage_id) {
-                $resourceIds[] = ['id' => $media->thumbnail_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-            }
-        }
-
-        DB::transaction(function () use ($submission, $resourceIds) {
-            foreach ($resourceIds as $resource) {
-                DriveCleanupJob::create([
-                    'drive_resource_id' => $resource['id'],
-                    'resource_type' => $resource['type'],
-                    'status' => DriveCleanupJob::STATUS_PENDING,
-                ]);
-            }
-
+        DB::transaction(function () use ($submission, $resources) {
+            $this->cleanupService->enqueueDeletions($resources);
             $submission->delete();
         });
 
