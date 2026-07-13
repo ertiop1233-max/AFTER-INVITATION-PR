@@ -36,7 +36,7 @@
             <div class="dropzone-text">
                 <strong>Click to select</strong> or drag files here
                 <br>
-                <span style="font-size:var(--font-size-xs)">Photos and videos up to {{ utils.formatBytes(maxSubmissionBytes) }}</span>
+                <span style="font-size:var(--font-size-xs)">Photos and videos up to {{ $maxSubmissionDisplay }}</span>
             </div>
         </div>
         <input type="file" x-ref.fileInput multiple accept="image/*,video/*" style="display:none" @change="handleFileSelect($event)">
@@ -374,12 +374,16 @@ function uploadApp() {
         async toggleRecording() {
             if (this.recording) {
                 this.recorder.stop();
+                this.recording = false;
             } else {
                 this.recorder = new VoiceRecorder({
                     maxDuration: this.voiceMaxDuration,
                     onStateChange: (state, elapsed) => {
                         if (state === 'recording' && elapsed !== undefined) {
                             this.elapsed = elapsed;
+                        }
+                        if (state === 'stopped' || state === 'cancelled') {
+                            this.recording = false;
                         }
                     },
                     onComplete: (blob, mime, duration) => {

@@ -61,20 +61,13 @@ class CleanupService
 
     public function cleanupDraftSubmission(Submission $submission): void
     {
-        if ($submission->storage_folder_id) {
-            $this->enqueueFolderDeletion($submission->storage_folder_id);
-        }
+        $resources = $this->collectSubmissionResourceIds($submission);
 
-        if ($submission->voice_storage_id) {
-            $this->enqueueFileDeletion($submission->voice_storage_id);
-        }
-
-        foreach ($submission->media as $media) {
-            if ($media->storage_id) {
-                $this->enqueueFileDeletion($media->storage_id);
-            }
-            if ($media->thumbnail_storage_id) {
-                $this->enqueueFileDeletion($media->thumbnail_storage_id);
+        foreach ($resources as $resource) {
+            if ($resource['type'] === DriveCleanupJob::RESOURCE_FOLDER) {
+                $this->enqueueFolderDeletion($resource['id']);
+            } else {
+                $this->enqueueFileDeletion($resource['id']);
             }
         }
 
@@ -91,6 +84,37 @@ class CleanupService
     public function enqueueFileDeletion(string $fileId): void
     {
         $this->enqueueDeletion($fileId, DriveCleanupJob::RESOURCE_FILE);
+    }
+
+    public function enqueueDeletions(array $resources): void
+    {
+        foreach ($resources as $resource) {
+            $this->enqueueDeletion($resource['id'], $resource['type']);
+        }
+    }
+
+    public function collectSubmissionResourceIds(Submission $submission): array
+    {
+        $resources = [];
+
+        if ($submission->storage_folder_id) {
+            $resources[] = ['id' => $submission->storage_folder_id, 'type' => DriveCleanupJob::RESOURCE_FOLDER];
+        }
+
+        if ($submission->voice_storage_id) {
+            $resources[] = ['id' => $submission->voice_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
+        }
+
+        foreach ($submission->media as $media) {
+            if ($media->storage_id) {
+                $resources[] = ['id' => $media->storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
+            }
+            if ($media->thumbnail_storage_id) {
+                $resources[] = ['id' => $media->thumbnail_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
+            }
+        }
+
+        return $resources;
     }
 
     public function processPendingJobs(): void

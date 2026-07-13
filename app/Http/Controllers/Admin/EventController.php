@@ -59,7 +59,9 @@ class EventController extends Controller
             $query->where('status', 'completed')->orderBy('submitted_at', 'desc')->limit(10);
         }]);
 
-        return view('admin.events.show', compact('event'));
+        $hasQr = $this->eventService->hasQrCode($event);
+
+        return view('admin.events.show', compact('event', 'hasQr'));
     }
 
     public function edit(Event $event)
@@ -76,13 +78,26 @@ class EventController extends Controller
             ->with('success', 'Event updated successfully.');
     }
 
-    public function destroy(Event $event)
+    public function confirmDelete(Event $event)
     {
+        return view('admin.events.delete', compact('event'));
+    }
+
+    public function destroy(Request $request, Event $event)
+    {
+        $confirmed = $request->input('confirm_title');
+
+        if ($confirmed !== $event->title) {
+            return back()
+                ->with('error', 'Confirmation failed. You must type the exact event title to delete.')
+                ->withInput();
+        }
+
         $this->eventService->deleteEvent($event);
 
         return redirect()
             ->route('admin.events.index')
-            ->with('success', 'Event deleted.');
+            ->with('success', 'Event deleted permanently.');
     }
 
     public function close(Event $event)
@@ -114,5 +129,36 @@ class EventController extends Controller
         $this->eventService->resetClientPassword($event, $request->password);
 
         return back()->with('success', 'Client password reset successfully.');
+    }
+
+    public function downloadQr(Event $event)
+    {
+        $stream = $this->eventService->getQrCodeStream($event);
+
+        if (!$stream) {
+            return back()->with('error', 'QR code not found. Try regenerating it.');
+        }
+
+        return response()->stream(function () use ($stream) {
+            while (!$stream->eof()) {
+                echo $stream->read(8192);
+                flush();
+            }
+        }, 200, [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => 'attachment; filename="qr_' . $event->upload_slug . '.png"',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
+    public function regenerateQr(Event $event)
+    {
+        $fileId = $this->eventService->generateQrCode($event);
+
+        if ($fileId) {
+            return back()->with('success', 'QR code regenerated successfully.');
+        }
+
+        return back()->with('error', 'QR code regeneration failed. Please try again.');
     }
 }

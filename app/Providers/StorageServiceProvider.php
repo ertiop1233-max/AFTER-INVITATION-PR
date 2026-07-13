@@ -17,6 +17,7 @@ class StorageServiceProvider extends ServiceProvider
                 serviceAccountKey: $config['service_account_key'] ?? null,
                 serviceAccountKeyFile: $config['service_account_key_file'] ?? null,
                 sharedDriveId: $config['shared_drive_id'] ?? null,
+                storageRootFolderId: $config['storage_root_folder_id'] ?? null,
             );
         });
     }

@@ -118,22 +118,6 @@ class DownloadService
         return $mediaCount <= $maxFiles && $totalBytes <= $maxBytes;
     }
 
-    public function streamSingleFile(Media $media): void
-    {
-        $this->disableOutputBuffering();
-
-        $stream = $this->storageService->getFileStream($media->storage_id);
-
-        header('Content-Type: ' . $media->mime_type);
-        header('Content-Disposition: attachment; filename="' . $media->original_filename . '"');
-        header('Content-Length: ' . $media->file_size_bytes);
-
-        while (!$stream->eof()) {
-            echo $stream->read(8192);
-            flush();
-        }
-    }
-
     private function buildManifest(Submission $submission, $uploadedMedia): string
     {
         $lines = [];

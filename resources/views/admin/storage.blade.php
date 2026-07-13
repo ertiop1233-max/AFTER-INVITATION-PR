@@ -43,6 +43,12 @@
     @endif
 </div>
 
+@if($quotaLastChecked)
+<p style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-4)">
+    Last successful quota check: {{ \Carbon\Carbon::parse($quotaLastChecked)->toDateTimeString() }} UTC
+</p>
+@endif
+
 @if($quotaWarning ?? false)
     <div class="alert alert-warning">
         Storage usage has exceeded the warning threshold. Please review and clean up old events.

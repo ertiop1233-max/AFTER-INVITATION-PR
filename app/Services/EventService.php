@@ -80,6 +80,24 @@ class EventService
         return $this->qrService->generateAndStore($url, $event->storage_root_folder_id);
     }
 
+    public function hasQrCode(Event $event): bool
+    {
+        if (!$event->storage_root_folder_id) {
+            return false;
+        }
+
+        return $this->qrService->findQrFile($event->storage_root_folder_id) !== null;
+    }
+
+    public function getQrCodeStream(Event $event): mixed
+    {
+        if (!$event->storage_root_folder_id) {
+            return null;
+        }
+
+        return $this->qrService->getQrStream($event->storage_root_folder_id);
+    }
+
     public function closeEvent(Event $event): Event
     {
         $event->update(['status' => Event::STATUS_CLOSED]);
@@ -105,17 +123,29 @@ class EventService
 
     public function deleteEvent(Event $event): void
     {
-        $resourceIds = $this->collectEventDriveResourceIds($event);
+        $event->load(['submissions.media', 'media']);
 
-        DB::transaction(function () use ($event, $resourceIds) {
-            foreach ($resourceIds as $resource) {
-                DriveCleanupJob::create([
-                    'drive_resource_id' => $resource['id'],
-                    'resource_type' => $resource['type'],
-                    'status' => DriveCleanupJob::STATUS_PENDING,
-                ]);
+        $resources = [];
+
+        if ($event->storage_root_folder_id) {
+            $resources[] = ['id' => $event->storage_root_folder_id, 'type' => DriveCleanupJob::RESOURCE_FOLDER];
+        }
+
+        foreach ($event->submissions as $submission) {
+            $resources = array_merge($resources, $this->cleanupService->collectSubmissionResourceIds($submission));
+        }
+
+        foreach ($event->media as $media) {
+            if ($media->storage_id) {
+                $resources[] = ['id' => $media->storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
             }
+            if ($media->thumbnail_storage_id) {
+                $resources[] = ['id' => $media->thumbnail_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
+            }
+        }
 
+        DB::transaction(function () use ($event, $resources) {
+            $this->cleanupService->enqueueDeletions($resources);
             $event->delete();
         });
 
@@ -128,21 +158,6 @@ class EventService
         $client->update([
             'password_encrypted' => $this->clientPasswordService->encrypt($newPassword),
         ]);
-    }
-
-    public function verifyClientCredentials(Event $event, string $password): bool
-    {
-        $client = $event->client;
-        if (!$client) {
-            return false;
-        }
-
-        try {
-            $decrypted = $this->clientPasswordService->decrypt($client->password_encrypted);
-            return hash_equals($decrypted, $password);
-        } catch (\Throwable $e) {
-            return false;
-        }
     }
 
     public function incrementCounters(Event $event, array $counts): void
@@ -172,31 +187,5 @@ class EventService
 
             $event->update($updates);
         });
-    }
-
-    private function collectEventDriveResourceIds(Event $event): array
-    {
-        $resources = [];
-
-        if ($event->storage_root_folder_id) {
-            $resources[] = ['id' => $event->storage_root_folder_id, 'type' => DriveCleanupJob::RESOURCE_FOLDER];
-        }
-
-        foreach ($event->submissions as $submission) {
-            if ($submission->voice_storage_id) {
-                $resources[] = ['id' => $submission->voice_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-            }
-        }
-
-        foreach ($event->media as $media) {
-            if ($media->storage_id) {
-                $resources[] = ['id' => $media->storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-            }
-            if ($media->thumbnail_storage_id) {
-                $resources[] = ['id' => $media->thumbnail_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-            }
-        }
-
-        return $resources;
     }
 }

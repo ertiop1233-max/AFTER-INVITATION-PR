@@ -13,6 +13,7 @@ class UploadService
 {
     public function __construct(
         private readonly StorageService $storageService,
+        private readonly CleanupService $cleanupService,
     ) {}
 
     public function initUpload(Submission $submission, array $fileData): array
@@ -52,15 +53,6 @@ class UploadService
         }
 
         return ['media' => $media, 'upload_uri' => $resumableUri];
-    }
-
-    public function getResumableUri(Media $media): ?string
-    {
-        if ($media->resumable_uri) {
-            return $media->resumable_uri;
-        }
-
-        return null;
     }
 
     public function processChunk(Media $media, string $data, int $offset, int $totalSize): array
@@ -178,29 +170,16 @@ class UploadService
 
     public function deleteMedia(Media $media): void
     {
-        $resourceIds = [];
-
         if ($media->storage_id) {
-            $resourceIds[] = $media->storage_id;
+            $this->cleanupService->enqueueFileDeletion($media->storage_id);
         }
         if ($media->thumbnail_storage_id) {
-            $resourceIds[] = $media->thumbnail_storage_id;
-        }
-
-        $media->update(['status' => Media::STATUS_FAILED]);
-
-        foreach ($resourceIds as $fileId) {
-            try {
-                $this->storageService->deleteFile($fileId);
-            } catch (\Throwable $e) {
-                Log::warning('Failed to delete media file', [
-                    'file_id' => $fileId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->cleanupService->enqueueFileDeletion($media->thumbnail_storage_id);
         }
 
         $media->delete();
+
+        $this->cleanupService->processPendingJobs();
     }
 
     private function completeUploadFromMetadata(Media $media, string $fileId, int $fileSize): Media
@@ -216,6 +195,15 @@ class UploadService
 
     private function ensureThumbnailsFolder(Event $event): string
     {
+        $existing = $this->storageService->findFileInFolderByName(
+            $event->storage_root_folder_id,
+            '_thumbs'
+        );
+
+        if ($existing) {
+            return $existing['id'];
+        }
+
         return $this->storageService->createFolder('_thumbs', $event->storage_root_folder_id);
     }
 

@@ -145,10 +145,13 @@ class UploadQueue {
                 const chunk = file.slice(offset, offset + chunkSize);
                 const chunkData = await chunk.arrayBuffer();
 
-                const response = await fetch('/api/upload/chunk', {
+                const url = `/api/upload/chunk?media_id=${entry.mediaId}&offset=${offset}&total_size=${totalSize}`;
+
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: {
-                        ...this.getApiHeaders(),
+                        'X-Upload-Nonce': window.uploadNonce || '',
+                        'X-Upload-Token': window.uploadToken || '',
                         'Content-Type': 'application/octet-stream',
                     },
                     body: chunkData,

@@ -29,12 +29,18 @@ class UploadPageController extends Controller
 
         $nonce = VerifyUploadNonce::generateNonce($event->upload_token);
 
+        $maxBytes = $event->max_submission_size_bytes;
+        $maxDisplay = $maxBytes >= 1073741824
+            ? number_format($maxBytes / 1073741824, 1) . ' GB'
+            : number_format($maxBytes / 1048576, 0) . ' MB';
+
         return view('upload.page', [
             'event' => $event,
             'uploadToken' => $event->upload_token,
             'uploadNonce' => $nonce,
             'uploadStrategy' => config('memoryvault.upload_strategy'),
-            'maxSubmissionBytes' => $event->max_submission_size_bytes,
+            'maxSubmissionBytes' => $maxBytes,
+            'maxSubmissionDisplay' => $maxDisplay,
             'maxConcurrent' => config('memoryvault.upload_max_concurrent', 3),
             'maxRetries' => config('memoryvault.upload_max_retries', 3),
             'chunkSize' => config('memoryvault.upload_chunk_size', 8388608),
