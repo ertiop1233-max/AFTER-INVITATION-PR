@@ -8,12 +8,15 @@ class CreateEventRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'allow_photos' => $this->boolean('allow_photos'),
-            'allow_videos' => $this->boolean('allow_videos'),
-            'allow_voice' => $this->boolean('allow_voice'),
-            'allow_messages' => $this->boolean('allow_messages'),
-        ]);
+        $normalized = [];
+
+        foreach (['allow_photos', 'allow_videos', 'allow_voice', 'allow_messages'] as $field) {
+            if ($this->exists($field)) {
+                $normalized[$field] = $this->boolean($field);
+            }
+        }
+
+        $this->merge($normalized);
     }
 
     public function authorize(): bool

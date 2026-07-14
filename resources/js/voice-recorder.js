@@ -7,70 +7,99 @@ class VoiceRecorder {
         this.startTime = 0;
         this.timerInterval = null;
         this.isRecording = false;
-        this.cancelled = false;
+        this.currentSession = null;
         this.onStateChange = options.onStateChange || (() => {});
         this.onComplete = options.onComplete || (() => {});
         this.onError = options.onError || (() => {});
     }
 
     async start() {
+        this.retireCurrentSession();
+
+        const session = {
+            recorder: null,
+            chunks: [],
+            stream: null,
+            startTime: 0,
+            timerInterval: null,
+            cancelled: false,
+        };
+        this.currentSession = session;
+
         try {
-            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            session.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            if (this.currentSession !== session) {
+                this.cleanup(session);
+                return false;
+            }
 
             const mimeType = this.selectMimeType();
-            this.mediaRecorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : {});
-            this.chunks = [];
-            this.cancelled = false;
+            session.recorder = new MediaRecorder(session.stream, mimeType ? { mimeType } : {});
+            this.syncPublicState(session);
 
-            this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) this.chunks.push(e.data);
+            session.recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) session.chunks.push(e.data);
             };
 
-            this.mediaRecorder.onstop = () => {
-                const mimeType = this.mediaRecorder?.mimeType || '';
-                const blob = new Blob(this.chunks, { type: mimeType });
-                const duration = Math.round((Date.now() - this.startTime) / 1000);
-                if (!this.cancelled && blob.size > 0) {
-                    this.onComplete(blob, mimeType, duration);
+            session.recorder.onstop = () => {
+                const recordedMimeType = session.recorder?.mimeType || '';
+                const blob = new Blob(session.chunks, { type: recordedMimeType });
+                const duration = Math.round((Date.now() - session.startTime) / 1000);
+
+                try {
+                    if (this.currentSession === session && !session.cancelled && blob.size > 0) {
+                        this.onComplete(blob, recordedMimeType, duration);
+                    }
+                } finally {
+                    this.cleanup(session);
                 }
-                this.cleanup();
             };
 
-            this.mediaRecorder.onerror = (e) => {
-                this.onError(e.error);
-                this.cleanup();
+            session.recorder.onerror = (e) => {
+                session.cancelled = true;
+                try {
+                    if (this.currentSession === session) {
+                        this.onError(e.error);
+                    }
+                } finally {
+                    this.cleanup(session);
+                }
             };
 
-            this.mediaRecorder.start();
-            this.startTime = Date.now();
+            session.recorder.start();
+            session.startTime = Date.now();
+            this.syncPublicState(session);
             this.isRecording = true;
-            this.startTimer();
+            this.startTimer(session);
             this.onStateChange('recording');
             return true;
         } catch (error) {
-            this.isRecording = false;
-            this.cleanup();
-            this.onError(error);
+            const isCurrentSession = this.currentSession === session;
+            this.cleanup(session);
+            if (isCurrentSession) this.onError(error);
             return false;
         }
     }
 
     stop() {
-        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-            this.cancelled = false;
-            this.mediaRecorder.stop();
+        const session = this.currentSession;
+        if (session?.recorder?.state === 'recording') {
+            session.cancelled = false;
+            session.recorder.stop();
             this.isRecording = false;
-            this.stopTimer();
+            this.stopTimer(session);
             this.onStateChange('stopped');
         }
     }
 
     cancel() {
-        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-            this.cancelled = true;
-            this.mediaRecorder.stop();
+        const session = this.currentSession;
+        if (session?.recorder?.state === 'recording') {
+            session.cancelled = true;
+            session.recorder.stop();
             this.isRecording = false;
-            this.stopTimer();
+            this.stopTimer(session);
             this.onStateChange('cancelled');
         }
     }
@@ -85,32 +114,71 @@ class VoiceRecorder {
         return null;
     }
 
-    startTimer() {
-        this.timerInterval = setInterval(() => {
-            const elapsed = Math.round((Date.now() - this.startTime) / 1000);
+    startTimer(session) {
+        session.timerInterval = setInterval(() => {
+            if (this.currentSession !== session) {
+                this.stopTimer(session);
+                return;
+            }
+
+            const elapsed = Math.round((Date.now() - session.startTime) / 1000);
             this.onStateChange('recording', elapsed);
 
             if (elapsed >= this.maxDuration) {
                 this.stop();
             }
         }, 1000);
+        this.timerInterval = session.timerInterval;
     }
 
-    stopTimer() {
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
+    stopTimer(session = this.currentSession) {
+        if (session?.timerInterval) {
+            clearInterval(session.timerInterval);
+            session.timerInterval = null;
+        }
+        if (this.currentSession === session) {
             this.timerInterval = null;
         }
     }
 
-    cleanup() {
-        if (this.stream) {
-            this.stream.getTracks().forEach(track => track.stop());
-            this.stream = null;
+    retireCurrentSession() {
+        const session = this.currentSession;
+        if (!session) return;
+
+        session.cancelled = true;
+        this.stopTimer(session);
+        if (session.recorder?.state === 'recording') {
+            session.recorder.stop();
+        } else {
+            this.cleanup(session);
         }
-        this.stopTimer();
-        this.mediaRecorder = null;
-        this.chunks = [];
+    }
+
+    cleanup(session = this.currentSession) {
+        if (!session) return;
+
+        this.stopTimer(session);
+        session.stream?.getTracks().forEach(track => track.stop());
+        session.stream = null;
+        session.chunks = [];
+
+        if (this.currentSession === session) {
+            this.currentSession = null;
+            this.isRecording = false;
+            this.mediaRecorder = null;
+            this.stream = null;
+            this.chunks = [];
+            this.startTime = 0;
+        }
+    }
+
+    syncPublicState(session) {
+        if (this.currentSession !== session) return;
+
+        this.mediaRecorder = session.recorder;
+        this.stream = session.stream;
+        this.chunks = session.chunks;
+        this.startTime = session.startTime;
     }
 }
 

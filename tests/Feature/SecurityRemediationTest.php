@@ -5,9 +5,12 @@ namespace Tests\Feature;
 use App\Http\Middleware\VerifyUploadNonce;
 use App\Models\Admin;
 use App\Models\Client;
+use App\Models\DriveCleanupJob;
 use App\Models\Event;
 use App\Models\Media;
 use App\Models\Submission;
+use App\Providers\AppServiceProvider;
+use App\Services\CleanupService;
 use App\Services\ClientPasswordService;
 use App\Services\EventService;
 use App\Services\UploadService;
@@ -63,7 +66,7 @@ class SecurityRemediationTest extends TestCase
         ], $this->uploadHeaders($event))->assertStatus(410);
     }
 
-    public function test_event_update_accepts_actual_form_payload_and_persists_unchecked_options(): void
+    public function test_partial_event_update_preserves_omitted_options(): void
     {
         $admin = Admin::create([
             'name' => 'Admin',
@@ -83,10 +86,101 @@ class SecurityRemediationTest extends TestCase
         $response->assertRedirect(route('admin.events.show', $event));
         $event->refresh();
         $this->assertSame('Updated title', $event->title);
+        $this->assertTrue($event->allow_photos);
+        $this->assertTrue($event->allow_videos);
+        $this->assertTrue($event->allow_voice);
+        $this->assertTrue($event->allow_messages);
+    }
+
+    public function test_event_form_can_explicitly_disable_an_option(): void
+    {
+        $admin = Admin::create([
+            'name' => 'Admin',
+            'email' => 'form-admin@example.com',
+            'password' => Hash::make('Password123!'),
+        ]);
+        [$event] = $this->createEventAndSubmission('form-editable', 'form-editable-token');
+
+        $this->withSession([
+            'admin_id' => $admin->id,
+            'admin_login_at' => now(),
+        ])->put(route('admin.events.update', $event), [
+            'title' => $event->title,
+            'event_type' => $event->event_type,
+            'allow_photos' => '0',
+            'allow_videos' => '1',
+            'allow_voice' => '1',
+            'allow_messages' => '1',
+        ])->assertRedirect(route('admin.events.show', $event));
+
+        $event->refresh();
         $this->assertFalse($event->allow_photos);
-        $this->assertFalse($event->allow_videos);
-        $this->assertFalse($event->allow_voice);
-        $this->assertFalse($event->allow_messages);
+        $this->assertTrue($event->allow_videos);
+        $this->assertTrue($event->allow_voice);
+        $this->assertTrue($event->allow_messages);
+    }
+
+    public function test_client_event_id_is_cast_to_an_integer(): void
+    {
+        [$event] = $this->createEventAndSubmission('typed-client', 'typed-client-token');
+        $client = Client::create([
+            'event_id' => (string) $event->id,
+            'name' => 'Typed Client',
+            'email' => 'typed-client@example.com',
+            'password_encrypted' => app(ClientPasswordService::class)->encrypt('Password123!'),
+        ]);
+
+        $this->assertIsInt($client->fresh()->event_id);
+        $this->assertSame($event->id, $client->fresh()->event_id);
+    }
+
+    public function test_login_limiter_has_an_ip_only_ceiling_across_distinct_emails(): void
+    {
+        (new AppServiceProvider($this->app))->boot();
+        $server = ['REMOTE_ADDR' => '198.51.100.42'];
+
+        for ($attempt = 1; $attempt <= 30; $attempt++) {
+            $response = $this->withServerVariables($server)
+                ->withSession(['_token' => 'test-token'])
+                ->post('/admin/login', [
+                    '_token' => 'test-token',
+                    'email' => "attacker{$attempt}@example.com",
+                    'password' => 'WrongPassword123!',
+                ]);
+
+            $this->assertNotSame(429, $response->getStatusCode());
+        }
+
+        $this->withServerVariables($server)
+            ->withSession(['_token' => 'test-token'])
+            ->post('/admin/login', [
+                '_token' => 'test-token',
+                'email' => 'attacker31@example.com',
+                'password' => 'WrongPassword123!',
+            ])
+            ->assertTooManyRequests();
+    }
+
+    public function test_reenqueuing_cleanup_resets_a_failed_job_for_retry(): void
+    {
+        $this->mockStorageProvider();
+        $job = DriveCleanupJob::create([
+            'drive_resource_id' => 'retry-file',
+            'resource_type' => DriveCleanupJob::RESOURCE_FILE,
+            'status' => DriveCleanupJob::STATUS_FAILED,
+            'attempts' => 10,
+            'next_retry_at' => now()->addDay(),
+            'last_error' => 'Previous deletion failed',
+        ]);
+
+        app(CleanupService::class)->enqueueFileDeletion('retry-file');
+
+        $job->refresh();
+        $this->assertSame(DriveCleanupJob::STATUS_PENDING, $job->status);
+        $this->assertSame(0, $job->attempts);
+        $this->assertNull($job->next_retry_at);
+        $this->assertNull($job->last_error);
+        $this->assertSame(1, DriveCleanupJob::where('drive_resource_id', 'retry-file')->count());
     }
 
     public function test_password_reset_revokes_existing_client_session(): void

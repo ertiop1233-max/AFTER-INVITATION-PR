@@ -10,7 +10,7 @@
     "isEntry": true
   },
   "resources/css/app.css": {
-    "file": "assets/appCss-D5O3diSG.css",
+    "file": "assets/appCss-BOvrInfM.css",
     "src": "resources/css/app.css",
     "isEntry": true
   },
@@ -20,7 +20,7 @@
     "isEntry": true
   },
   "resources/css/upload.css": {
-    "file": "assets/uploadCss-J2hQordm.css",
+    "file": "assets/uploadCss-C86gBT1F.css",
     "src": "resources/css/upload.css",
     "isEntry": true
   },
@@ -43,7 +43,7 @@
     "isEntry": true
   },
   "resources/js/upload-page.js": {
-    "file": "assets/upload-BKZ7Txqs.js",
+    "file": "assets/upload-v3s3Xc0O.js",
     "name": "upload",
     "src": "resources/js/upload-page.js",
     "isEntry": true,

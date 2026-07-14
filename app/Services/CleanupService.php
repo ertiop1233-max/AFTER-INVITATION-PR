@@ -188,11 +188,20 @@ class CleanupService
 
     private function enqueueDeletion(string $resourceId, string $resourceType): void
     {
-        DriveCleanupJob::firstOrCreate([
+        $job = DriveCleanupJob::firstOrCreate([
             'drive_resource_id' => $resourceId,
             'resource_type' => $resourceType,
         ], [
             'status' => DriveCleanupJob::STATUS_PENDING,
         ]);
+
+        DriveCleanupJob::whereKey($job->id)
+            ->where('status', DriveCleanupJob::STATUS_FAILED)
+            ->update([
+                'status' => DriveCleanupJob::STATUS_PENDING,
+                'attempts' => 0,
+                'next_retry_at' => null,
+                'last_error' => null,
+            ]);
     }
 }

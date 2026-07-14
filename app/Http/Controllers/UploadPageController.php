@@ -44,6 +44,7 @@ class UploadPageController extends Controller
             'maxConcurrent' => config('memoryvault.upload_max_concurrent', 3),
             'maxRetries' => config('memoryvault.upload_max_retries', 3),
             'chunkSize' => config('memoryvault.upload_chunk_size', 8388608),
+            'requestTimeout' => config('memoryvault.upload_request_timeout_ms', 120000),
             'voiceMaxDuration' => config('memoryvault.voice.max_duration_seconds', 600),
             'voiceMaxSize' => config('memoryvault.voice.max_file_size_bytes', 15728640),
         ]);

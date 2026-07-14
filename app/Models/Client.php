@@ -20,6 +20,7 @@ class Client extends Model
     ];
 
     protected $casts = [
+        'event_id' => 'integer',
         'auth_version' => 'integer',
     ];
 

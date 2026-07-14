@@ -122,6 +122,7 @@ window.uploadConfig = {
     maxConcurrent: {{ $maxConcurrent }},
     maxRetries: {{ $maxRetries }},
     chunkSize: {{ $chunkSize }},
+    requestTimeout: {{ $requestTimeout }},
 };
 window.voiceMaxDuration = {{ $voiceMaxDuration }};
 window.voiceMaxSize = {{ $voiceMaxSize }};
