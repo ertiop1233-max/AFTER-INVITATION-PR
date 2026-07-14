@@ -67,12 +67,15 @@
                     'download_url' => route('client.media.view', $m),
                 ])->values()->all();
             @endphp
+            <script>
+                window.submissionMediaItems = @js($mediaItems);
+            </script>
             <div class="gallery-grid">
                 @foreach($submission->media as $media)
                     <div
                         class="gallery-item"
-                        onclick="mediaViewer.open(@json($mediaItems), {{ $loop->index }})"
-                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();mediaViewer.open(@json($mediaItems), {{ $loop->index }})}"
+                        onclick="mediaViewer.open(window.submissionMediaItems, {{ $loop->index }})"
+                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();mediaViewer.open(window.submissionMediaItems, {{ $loop->index }})}"
                         tabindex="0"
                         role="button"
                         aria-label="View {{ $media->original_filename }}"

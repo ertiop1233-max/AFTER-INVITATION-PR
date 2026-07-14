@@ -17,6 +17,8 @@ use App\Services\UploadService;
 use DomainException;
 use GuzzleHttp\Psr7\Utils;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -132,6 +134,62 @@ class SecurityRemediationTest extends TestCase
 
         $this->assertIsInt($client->fresh()->event_id);
         $this->assertSame($event->id, $client->fresh()->event_id);
+    }
+
+    public function test_submission_gallery_serializes_viewer_items_once(): void
+    {
+        [$event, $submission] = $this->createEventAndSubmission('gallery-items', 'gallery-items-token');
+        $submission->update([
+            'status' => Submission::STATUS_COMPLETED,
+            'submitted_at' => now(),
+        ]);
+
+        foreach (['first', 'second'] as $name) {
+            Media::create([
+                'submission_id' => $submission->id,
+                'event_id' => $event->id,
+                'media_type' => Media::TYPE_PHOTO,
+                'original_filename' => "{$name}.jpg",
+                'stored_filename' => "{$name}-stored.jpg",
+                'mime_type' => 'image/jpeg',
+                'extension' => 'jpg',
+                'file_size_bytes' => 1024,
+                'storage_path' => "path/{$name}.jpg",
+                'storage_id' => "drive-{$name}",
+                'status' => Media::STATUS_UPLOADED,
+                'uploaded_at' => now(),
+            ]);
+        }
+
+        $response = $this->withSession($this->clientSession($event))
+            ->get(route('client.submissions.show', $submission));
+
+        $response->assertOk();
+        $content = $response->getContent();
+        $this->assertSame(1, substr_count($content, 'window.submissionMediaItems ='));
+        $this->assertSame(4, substr_count($content, 'mediaViewer.open(window.submissionMediaItems,'));
+    }
+
+    public function test_configured_trusted_proxies_are_applied_by_the_service_provider(): void
+    {
+        config(['app.trusted_proxies' => ['10.0.0.1']]);
+
+        try {
+            (new AppServiceProvider($this->app))->boot();
+            $request = Request::create('/health', 'GET', server: [
+                'REMOTE_ADDR' => '10.0.0.1',
+                'HTTP_X_FORWARDED_FOR' => '203.0.113.10',
+                'HTTP_X_FORWARDED_PROTO' => 'https',
+            ]);
+
+            (new TrustProxies)->handle($request, fn () => response('ok'));
+
+            $this->assertSame('203.0.113.10', $request->ip());
+            $this->assertTrue($request->isSecure());
+        } finally {
+            TrustProxies::flushState();
+            config(['app.trusted_proxies' => []]);
+        }
     }
 
     public function test_login_limiter_has_an_ip_only_ceiling_across_distinct_emails(): void
