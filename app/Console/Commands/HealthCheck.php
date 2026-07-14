@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 class HealthCheck extends Command
 {
     protected $signature = 'memoryvault:health';
+
     protected $description = 'Run system health checks';
 
     public function handle(HealthService $healthService): int
@@ -20,7 +21,7 @@ class HealthCheck extends Command
             $isHealthy = is_bool($status) ? $status : ($status !== null);
             $label = $isHealthy ? 'OK' : 'FAIL';
 
-            if (!$isHealthy) {
+            if (! $isHealthy) {
                 $allHealthy = false;
             }
 

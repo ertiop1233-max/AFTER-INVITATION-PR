@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Client;
 use App\Models\DriveCleanupJob;
 use App\Models\Event;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -59,7 +58,7 @@ class EventService
 
                 return $event;
             });
-        } catch (QueryException $e) {
+        } catch (\Throwable $e) {
             Log::error('Event DB creation failed, compensating with Drive cleanup', [
                 'folder_id' => $rootFolderId,
                 'error' => $e->getMessage(),
@@ -73,7 +72,7 @@ class EventService
     {
         $url = route('upload.page', ['slug' => $event->upload_slug, 'token' => $event->upload_token]);
 
-        if (!$event->storage_root_folder_id) {
+        if (! $event->storage_root_folder_id) {
             return null;
         }
 
@@ -82,7 +81,7 @@ class EventService
 
     public function hasQrCode(Event $event): bool
     {
-        if (!$event->storage_root_folder_id) {
+        if (! $event->storage_root_folder_id) {
             return false;
         }
 
@@ -91,7 +90,7 @@ class EventService
 
     public function getQrCodeStream(Event $event): mixed
     {
-        if (!$event->storage_root_folder_id) {
+        if (! $event->storage_root_folder_id) {
             return null;
         }
 
@@ -101,12 +100,14 @@ class EventService
     public function closeEvent(Event $event): Event
     {
         $event->update(['status' => Event::STATUS_CLOSED]);
+
         return $event->fresh();
     }
 
     public function reopenEvent(Event $event): Event
     {
         $event->update(['status' => Event::STATUS_ACTIVE]);
+
         return $event->fresh();
     }
 
@@ -123,24 +124,14 @@ class EventService
 
     public function deleteEvent(Event $event): void
     {
-        $event->load(['submissions.media', 'media']);
-
         $resources = [];
 
         if ($event->storage_root_folder_id) {
             $resources[] = ['id' => $event->storage_root_folder_id, 'type' => DriveCleanupJob::RESOURCE_FOLDER];
-        }
-
-        foreach ($event->submissions as $submission) {
-            $resources = array_merge($resources, $this->cleanupService->collectSubmissionResourceIds($submission));
-        }
-
-        foreach ($event->media as $media) {
-            if ($media->storage_id) {
-                $resources[] = ['id' => $media->storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
-            }
-            if ($media->thumbnail_storage_id) {
-                $resources[] = ['id' => $media->thumbnail_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
+        } else {
+            $event->load('submissions.media');
+            foreach ($event->submissions as $submission) {
+                $resources = array_merge($resources, $this->cleanupService->collectSubmissionResourceIds($submission));
             }
         }
 
@@ -149,7 +140,6 @@ class EventService
             $event->delete();
         });
 
-        $this->cleanupService->processPendingJobs();
     }
 
     public function resetClientPassword(Event $event, string $newPassword): void
@@ -157,6 +147,7 @@ class EventService
         $client = $event->client;
         $client->update([
             'password_encrypted' => $this->clientPasswordService->encrypt($newPassword),
+            'auth_version' => $client->auth_version + 1,
         ]);
     }
 
@@ -164,25 +155,28 @@ class EventService
     {
         DB::transaction(function () use ($event, $counts) {
             $event = Event::lockForUpdate()->find($event->id);
+            if (! $event) {
+                return;
+            }
 
             $updates = [];
             if (isset($counts['submissions'])) {
-                $updates['total_submissions'] = $event->total_submissions + $counts['submissions'];
+                $updates['total_submissions'] = max(0, $event->total_submissions + $counts['submissions']);
             }
             if (isset($counts['photos'])) {
-                $updates['total_photos'] = $event->total_photos + $counts['photos'];
+                $updates['total_photos'] = max(0, $event->total_photos + $counts['photos']);
             }
             if (isset($counts['videos'])) {
-                $updates['total_videos'] = $event->total_videos + $counts['videos'];
+                $updates['total_videos'] = max(0, $event->total_videos + $counts['videos']);
             }
             if (isset($counts['voice'])) {
-                $updates['total_voice_recordings'] = $event->total_voice_recordings + $counts['voice'];
+                $updates['total_voice_recordings'] = max(0, $event->total_voice_recordings + $counts['voice']);
             }
             if (isset($counts['messages'])) {
-                $updates['total_messages'] = $event->total_messages + $counts['messages'];
+                $updates['total_messages'] = max(0, $event->total_messages + $counts['messages']);
             }
             if (isset($counts['storage_bytes'])) {
-                $updates['total_storage_bytes'] = $event->total_storage_bytes + $counts['storage_bytes'];
+                $updates['total_storage_bytes'] = max(0, $event->total_storage_bytes + $counts['storage_bytes']);
             }
 
             $event->update($updates);

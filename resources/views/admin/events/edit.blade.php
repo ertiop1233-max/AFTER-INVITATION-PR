@@ -41,9 +41,13 @@
         <div class="form-group">
             <label class="label">Allowed Media Types</label>
             <div class="checkbox-group">
+                <input type="hidden" name="allow_photos" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_photos" value="1" {{ old('allow_photos', $event->allow_photos) ? 'checked' : '' }}> Photos</label>
+                <input type="hidden" name="allow_videos" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_videos" value="1" {{ old('allow_videos', $event->allow_videos) ? 'checked' : '' }}> Videos</label>
+                <input type="hidden" name="allow_voice" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_voice" value="1" {{ old('allow_voice', $event->allow_voice) ? 'checked' : '' }}> Voice</label>
+                <input type="hidden" name="allow_messages" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_messages" value="1" {{ old('allow_messages', $event->allow_messages) ? 'checked' : '' }}> Messages</label>
             </div>
         </div>

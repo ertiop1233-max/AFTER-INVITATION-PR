@@ -24,7 +24,7 @@
         @csrf
         <div class="form-group">
             <label class="label" for="password">New Password</label>
-            <input class="input" type="text" id="password" name="password" required>
+            <input class="input" type="password" id="password" name="password" autocomplete="new-password" required>
         </div>
         <button type="submit" class="btn btn-primary">Reset Password</button>
     </form>

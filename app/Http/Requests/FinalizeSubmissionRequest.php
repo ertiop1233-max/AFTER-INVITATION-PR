@@ -16,9 +16,9 @@ class FinalizeSubmissionRequest extends FormRequest
         return [
             'submission_id' => ['required', 'integer'],
             'written_message' => ['nullable', 'string', 'max:5000'],
-            'voice_data' => ['nullable', 'string'],
-            'voice_mime_type' => ['nullable', 'string', 'in:audio/webm,audio/ogg,audio/mp4'],
-            'voice_duration_seconds' => ['nullable', 'integer', 'min:1', 'max:600'],
+            'voice_data' => ['nullable', 'required_with:voice_mime_type,voice_duration_seconds', 'string'],
+            'voice_mime_type' => ['nullable', 'required_with:voice_data', 'string', 'in:audio/webm,audio/ogg,audio/mp4'],
+            'voice_duration_seconds' => ['nullable', 'required_with:voice_data', 'integer', 'min:1', 'max:600'],
         ];
     }
 }

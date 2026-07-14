@@ -1,0 +1,57 @@
+{
+  "_heic2any-DQxJzxPi.js": {
+    "file": "assets/heic2any-DQxJzxPi.js",
+    "name": "heic2any",
+    "isDynamicEntry": true
+  },
+  "resources/css/admin.css": {
+    "file": "assets/adminCss-pCdaEgwk.css",
+    "src": "resources/css/admin.css",
+    "isEntry": true
+  },
+  "resources/css/app.css": {
+    "file": "assets/appCss-BOvrInfM.css",
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/css/client.css": {
+    "file": "assets/clientCss-C_IhSyIH.css",
+    "src": "resources/css/client.css",
+    "isEntry": true
+  },
+  "resources/css/upload.css": {
+    "file": "assets/uploadCss-C86gBT1F.css",
+    "src": "resources/css/upload.css",
+    "isEntry": true
+  },
+  "resources/js/admin.js": {
+    "file": "assets/admin-l0sNRNKZ.js",
+    "name": "admin",
+    "src": "resources/js/admin.js",
+    "isEntry": true
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-DBQDzig0.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true
+  },
+  "resources/js/client.js": {
+    "file": "assets/client-BvyoMwmU.js",
+    "name": "client",
+    "src": "resources/js/client.js",
+    "isEntry": true
+  },
+  "resources/js/upload-page.js": {
+    "file": "assets/upload-v3s3Xc0O.js",
+    "name": "upload",
+    "src": "resources/js/upload-page.js",
+    "isEntry": true,
+    "imports": [
+      "resources/js/client.js"
+    ],
+    "dynamicImports": [
+      "_heic2any-DQxJzxPi.js"
+    ]
+  }
+}

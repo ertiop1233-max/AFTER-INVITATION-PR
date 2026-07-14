@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 class ProcessDriveCleanupQueue extends Command
 {
     protected $signature = 'memoryvault:process-cleanup-queue';
+
     protected $description = 'Process pending Drive cleanup jobs';
 
     public function handle(CleanupService $cleanupService): int
@@ -17,6 +18,7 @@ class ProcessDriveCleanupQueue extends Command
         $cleanupService->processPendingJobs();
 
         $this->info('Drive cleanup queue processed.');
+
         return self::SUCCESS;
     }
 }

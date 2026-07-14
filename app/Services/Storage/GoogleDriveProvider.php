@@ -5,6 +5,8 @@ namespace App\Services\Storage;
 use Google_Client;
 use Google_Service_Drive;
 use Google_Service_Drive_DriveFile;
+use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\Request;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -26,17 +28,20 @@ class GoogleDriveProvider implements StorageProviderInterface
                 $this->getService()->drives->get($this->sharedDriveId);
             } else {
                 $rootId = $this->storageRootFolderId;
-                if (!$rootId) {
+                if (! $rootId) {
                     Log::error('Google Drive health check failed: no root folder ID configured');
+
                     return false;
                 }
                 $this->getService()->files->get($rootId, $this->baseParams([
                     'fields' => 'id',
                 ]));
             }
+
             return true;
         } catch (\Throwable $e) {
             Log::error('Google Drive health check failed', ['error' => $e->getMessage()]);
+
             return false;
         }
     }
@@ -133,9 +138,9 @@ class GoogleDriveProvider implements StorageProviderInterface
         $client = $this->getService()->getClient();
         $client->setDefer(true);
 
-        $request = new \GuzzleHttp\Psr7\Request('PUT', $resumableUri, [
+        $request = new Request('PUT', $resumableUri, [
             'Content-Length' => strlen($data),
-            'Content-Range' => "bytes {$offset}-" . ($offset + strlen($data) - 1) . "/{$totalSize}",
+            'Content-Range' => "bytes {$offset}-".($offset + strlen($data) - 1)."/{$totalSize}",
         ], $data);
 
         $response = $client->execute($request);
@@ -147,6 +152,7 @@ class GoogleDriveProvider implements StorageProviderInterface
 
         if ($code === 200 || $code === 201) {
             $metadata = json_decode($body, true);
+
             return [
                 'completed' => true,
                 'file_id' => $metadata['id'] ?? null,
@@ -157,6 +163,7 @@ class GoogleDriveProvider implements StorageProviderInterface
 
         if ($code === 308) {
             $range = $response->getHeaderLine('Range');
+
             return [
                 'completed' => false,
                 'uploaded_bytes' => $range ? (int) explode('-', $range)[1] + 1 : $offset + strlen($data),
@@ -184,7 +191,9 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     public function findFileInFolderByName(string $folderId, string $fileName): ?array
     {
-        $query = "'{$folderId}' in parents and name = '{$fileName}' and trashed = false";
+        $escapedFolderId = $this->escapeQueryLiteral($folderId);
+        $escapedFileName = $this->escapeQueryLiteral($fileName);
+        $query = "'{$escapedFolderId}' in parents and name = '{$escapedFileName}' and trashed = false";
 
         $params = $this->listParams([
             'q' => $query,
@@ -219,7 +228,7 @@ class GoogleDriveProvider implements StorageProviderInterface
             $fileId
         );
 
-        $request = new \GuzzleHttp\Psr7\Request('GET', $url);
+        $request = new Request('GET', $url);
 
         $response = $client->execute($request);
 
@@ -240,17 +249,18 @@ class GoogleDriveProvider implements StorageProviderInterface
 
             $quota = $about->getStorageQuota();
 
-            if (!$quota) {
+            if (! $quota) {
                 return null;
             }
 
             return [
                 'limit' => (int) $quota->getLimit(),
-                'usage' => (int) $quota->getUsageInDrive(),
-                'usage_in_drive' => (int) $quota->getUsage(),
+                'usage' => (int) $quota->getUsage(),
+                'usage_in_drive' => (int) $quota->getUsageInDrive(),
             ];
         } catch (\Throwable $e) {
             Log::warning('Could not retrieve Drive quota info', ['error' => $e->getMessage()]);
+
             return null;
         }
     }
@@ -262,15 +272,16 @@ class GoogleDriveProvider implements StorageProviderInterface
         }
 
         $this->service = new Google_Service_Drive($this->createClient());
+
         return $this->service;
     }
 
     private function createClient(): Google_Client
     {
-        $client = new Google_Client();
+        $client = new Google_Client;
         $client->setAuthConfig($this->getCredentialsArray());
         $client->addScope(Google_Service_Drive::DRIVE);
-        $client->setHttpClient(new \GuzzleHttp\Client([
+        $client->setHttpClient(new Client([
             'timeout' => 120,
             'verify' => true,
         ]));
@@ -282,15 +293,20 @@ class GoogleDriveProvider implements StorageProviderInterface
     {
         if ($this->serviceAccountKeyFile && file_exists($this->serviceAccountKeyFile)) {
             $json = file_get_contents($this->serviceAccountKeyFile);
-            return json_decode($json, true);
+
+            return $this->validateCredentialsJson($json === false ? '' : $json);
         }
 
         if ($this->serviceAccountKey) {
-            $decoded = base64_decode($this->serviceAccountKey, true);
+            $encoded = str_starts_with($this->serviceAccountKey, 'base64:')
+                ? substr($this->serviceAccountKey, 7)
+                : $this->serviceAccountKey;
+            $decoded = base64_decode($encoded, true);
             if ($decoded === false) {
                 throw new RuntimeException('GOOGLE_SERVICE_ACCOUNT_KEY is not valid base64');
             }
-            return json_decode($decoded, true);
+
+            return $this->validateCredentialsJson($decoded);
         }
 
         throw new RuntimeException('No Google service account credentials configured');
@@ -329,6 +345,25 @@ class GoogleDriveProvider implements StorageProviderInterface
 
     private function getChunkSize(): int
     {
-        return 8 * 1024 * 1024;
+        return config('memoryvault.upload_chunk_size', 8 * 1024 * 1024);
+    }
+
+    private function escapeQueryLiteral(string $value): string
+    {
+        return str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
+    }
+
+    private function validateCredentialsJson(string $json): array
+    {
+        $credentials = json_decode($json, true);
+
+        if (! is_array($credentials)
+            || ($credentials['type'] ?? null) !== 'service_account'
+            || empty($credentials['client_email'])
+            || empty($credentials['private_key'])) {
+            throw new RuntimeException('Google service-account key JSON is invalid or incomplete');
+        }
+
+        return $credentials;
     }
 }

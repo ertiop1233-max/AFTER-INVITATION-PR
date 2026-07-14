@@ -35,6 +35,7 @@ class Submission extends Model
     ];
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_COMPLETED = 'completed';
 
     public function event(): BelongsTo
@@ -65,5 +66,15 @@ class Submission extends Model
     public function hasMessage(): bool
     {
         return $this->written_message !== null && trim($this->written_message) !== '';
+    }
+
+    public function voiceMimeType(): string
+    {
+        return match (pathinfo((string) $this->voice_storage_path, PATHINFO_EXTENSION)) {
+            'webm' => 'audio/webm',
+            'ogg' => 'audio/ogg',
+            'm4a' => 'audio/mp4',
+            default => 'application/octet-stream',
+        };
     }
 }

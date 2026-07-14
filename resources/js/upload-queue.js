@@ -2,6 +2,7 @@ const UPLOAD_CONFIG = {
     maxConcurrent: 3,
     maxRetries: 3,
     retryDelays: [1000, 3000, 5000],
+    requestTimeout: 120000,
 };
 
 class UploadQueue {
@@ -103,7 +104,7 @@ class UploadQueue {
 
     async uploadPlanA(entry) {
         try {
-            const response = await fetch(entry.uploadUri, {
+            const response = await this.fetchWithTimeout(entry.uploadUri, {
                 method: 'PUT',
                 body: entry.file,
                 headers: {
@@ -115,7 +116,7 @@ class UploadQueue {
                 throw new Error(`Upload failed with status ${response.status}`);
             }
 
-            const completeResponse = await fetch('/api/upload/complete', {
+            const completeResponse = await this.fetchWithTimeout('/api/upload/complete', {
                 method: 'POST',
                 headers: this.getApiHeaders(),
                 body: JSON.stringify({ media_id: entry.mediaId }),
@@ -147,7 +148,7 @@ class UploadQueue {
 
                 const url = `/api/upload/chunk?media_id=${entry.mediaId}&offset=${offset}&total_size=${totalSize}`;
 
-                const response = await fetch(url, {
+                const response = await this.fetchWithTimeout(url, {
                     method: 'POST',
                     headers: {
                         'X-Upload-Nonce': window.uploadNonce || '',
@@ -207,6 +208,21 @@ class UploadQueue {
             'X-Upload-Nonce': window.uploadNonce || '',
             'X-Upload-Token': window.uploadToken || '',
         };
+    }
+
+    async fetchWithTimeout(url, options) {
+        const controller = new AbortController();
+        const timeoutMs = Math.max(1, Number(this.config.requestTimeout) || UPLOAD_CONFIG.requestTimeout);
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            return await fetch(url, {
+                ...options,
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
     }
 
     notifyChange(mediaId) {

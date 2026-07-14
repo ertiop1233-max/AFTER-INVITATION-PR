@@ -6,6 +6,19 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class CreateEventRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $normalized = [];
+
+        foreach (['allow_photos', 'allow_videos', 'allow_voice', 'allow_messages'] as $field) {
+            if ($this->exists($field)) {
+                $normalized[$field] = $this->boolean($field);
+            }
+        }
+
+        $this->merge($normalized);
+    }
+
     public function authorize(): bool
     {
         return true;
@@ -23,9 +36,9 @@ class CreateEventRequest extends FormRequest
             'allow_videos' => ['boolean'],
             'allow_voice' => ['boolean'],
             'allow_messages' => ['boolean'],
-            'client_name' => ['required', 'string', 'min:2', 'max:100'],
-            'client_email' => ['required', 'email', 'max:255'],
-            'client_password' => ['required', 'string', 'min:8', 'max:100'],
+            'client_name' => [$this->isMethod('post') ? 'required' : 'sometimes', 'string', 'min:2', 'max:100'],
+            'client_email' => [$this->isMethod('post') ? 'required' : 'sometimes', 'email', 'max:255'],
+            'client_password' => [$this->isMethod('post') ? 'required' : 'sometimes', 'string', 'min:8', 'max:100'],
         ];
     }
 }

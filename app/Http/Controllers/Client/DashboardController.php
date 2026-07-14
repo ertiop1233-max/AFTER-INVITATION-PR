@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Event;
 use App\Models\Media;
 use App\Models\Submission;
-use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
@@ -14,7 +13,7 @@ class DashboardController extends Controller
     {
         $event = Event::with('client')->find(session('event_id'));
 
-        if (!$event) {
+        if (! $event) {
             return redirect()->route('client.login');
         }
 
@@ -40,7 +39,7 @@ class DashboardController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (!$event) {
+        if (! $event) {
             return redirect()->route('client.login');
         }
 

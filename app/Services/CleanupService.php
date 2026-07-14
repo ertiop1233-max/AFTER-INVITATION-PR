@@ -26,7 +26,7 @@ class CleanupService
         $cutoff = now()->subHours($maxAgeHours);
 
         $staleDrafts = Submission::where('status', Submission::STATUS_DRAFT)
-            ->where('created_at', '<', $cutoff)
+            ->where('updated_at', '<', $cutoff)
             ->limit(100)
             ->get();
 
@@ -41,7 +41,7 @@ class CleanupService
         $cutoff = now()->subHours($maxAgeHours);
 
         $staleMedia = Media::whereIn('status', [Media::STATUS_UPLOADING, Media::STATUS_FAILED])
-            ->where('created_at', '<', $cutoff)
+            ->where('updated_at', '<', $cutoff)
             ->whereHas('submission', function ($query) {
                 $query->where('status', Submission::STATUS_COMPLETED);
             })
@@ -73,7 +73,6 @@ class CleanupService
 
         $submission->delete();
 
-        $this->processPendingJobs();
     }
 
     public function enqueueFolderDeletion(string $folderId): void
@@ -99,14 +98,12 @@ class CleanupService
 
         if ($submission->storage_folder_id) {
             $resources[] = ['id' => $submission->storage_folder_id, 'type' => DriveCleanupJob::RESOURCE_FOLDER];
-        }
-
-        if ($submission->voice_storage_id) {
+        } elseif ($submission->voice_storage_id) {
             $resources[] = ['id' => $submission->voice_storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
         }
 
         foreach ($submission->media as $media) {
-            if ($media->storage_id) {
+            if (! $submission->storage_folder_id && $media->storage_id) {
                 $resources[] = ['id' => $media->storage_id, 'type' => DriveCleanupJob::RESOURCE_FILE];
             }
             if ($media->thumbnail_storage_id) {
@@ -119,16 +116,26 @@ class CleanupService
 
     public function processPendingJobs(): void
     {
-        $jobs = DriveCleanupJob::where('status', DriveCleanupJob::STATUS_PENDING)
+        DriveCleanupJob::where('status', DriveCleanupJob::STATUS_PROCESSING)
+            ->where('updated_at', '<', now()->subMinutes(30))
+            ->update(['status' => DriveCleanupJob::STATUS_PENDING]);
+
+        $jobIds = DriveCleanupJob::where('status', DriveCleanupJob::STATUS_PENDING)
             ->where(function ($query) {
                 $query->whereNull('next_retry_at')
                     ->orWhere('next_retry_at', '<=', now());
             })
             ->limit(50)
-            ->get();
+            ->pluck('id');
 
-        foreach ($jobs as $job) {
-            $this->processJob($job);
+        foreach ($jobIds as $jobId) {
+            $claimed = DriveCleanupJob::whereKey($jobId)
+                ->where('status', DriveCleanupJob::STATUS_PENDING)
+                ->update(['status' => DriveCleanupJob::STATUS_PROCESSING]);
+
+            if ($claimed === 1) {
+                $this->processJob(DriveCleanupJob::findOrFail($jobId));
+            }
         }
     }
 
@@ -163,6 +170,7 @@ class CleanupService
                 $backoffDelay = $delay * pow(2, $job->attempts - 1);
 
                 $job->update([
+                    'status' => DriveCleanupJob::STATUS_PENDING,
                     'next_retry_at' => now()->addSeconds($backoffDelay),
                     'last_error' => $e->getMessage(),
                 ]);
@@ -180,18 +188,20 @@ class CleanupService
 
     private function enqueueDeletion(string $resourceId, string $resourceType): void
     {
-        $existing = DriveCleanupJob::where('drive_resource_id', $resourceId)
-            ->where('status', DriveCleanupJob::STATUS_PENDING)
-            ->first();
-
-        if ($existing) {
-            return;
-        }
-
-        DriveCleanupJob::create([
+        $job = DriveCleanupJob::firstOrCreate([
             'drive_resource_id' => $resourceId,
             'resource_type' => $resourceType,
+        ], [
             'status' => DriveCleanupJob::STATUS_PENDING,
         ]);
+
+        DriveCleanupJob::whereKey($job->id)
+            ->where('status', DriveCleanupJob::STATUS_FAILED)
+            ->update([
+                'status' => DriveCleanupJob::STATUS_PENDING,
+                'attempts' => 0,
+                'next_retry_at' => null,
+                'last_error' => null,
+            ]);
     }
 }

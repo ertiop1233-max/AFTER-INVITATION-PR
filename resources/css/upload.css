@@ -333,10 +333,10 @@
     font-size: var(--font-size-4xl);
     color: var(--color-text-primary);
     margin-bottom: var(--space-6);
-    animation: bounceIn var(--duration-slow) var(--easing-default);
+    animation: bounce-in var(--duration-slow) var(--easing-default);
 }
 
-@keyframes bounceIn {
+@keyframes bounce-in {
     0% { transform: scale(0); }
     60% { transform: scale(1.2); }
     100% { transform: scale(1); }

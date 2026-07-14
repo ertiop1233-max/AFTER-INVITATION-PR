@@ -35,8 +35,8 @@ Use this mode if you are using a standard Google account without Google Workspac
 1. Create a Google Cloud project.
 2. Enable the Google Drive API.
 3. Create a service account and download the JSON key.
-4. Share your chosen root folder with the service account email (Editor access).
-5. Create a root folder in My Drive (e.g., `Memory Vault`).
+4. Create a root folder in My Drive (e.g., `Memory Vault`).
+5. Share the root folder with the service account email (Editor access).
 6. Get the folder ID from the Drive URL.
 7. Configure `.env`:
    ```env
@@ -106,8 +106,11 @@ DB_PASSWORD=your_password
 
 SESSION_DRIVER=database
 SESSION_LIFETIME=129600
+SESSION_EXPIRE_ON_CLOSE=false
 SESSION_ENCRYPT=true
 SESSION_COOKIE=memoryvault_session
+SESSION_PATH=/
+SESSION_DOMAIN=
 SESSION_SECURE_COOKIE=true
 SESSION_HTTP_ONLY=true
 SESSION_SAME_SITE=lax

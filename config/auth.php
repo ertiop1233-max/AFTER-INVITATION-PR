@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Admin;
+use App\Models\Client;
+
 return [
 
     'defaults' => [
@@ -20,11 +23,11 @@ return [
     'providers' => [
         'admins' => [
             'driver' => 'eloquent',
-            'model' => App\Models\Admin::class,
+            'model' => Admin::class,
         ],
         'clients' => [
             'driver' => 'eloquent',
-            'model' => App\Models\Client::class,
+            'model' => Client::class,
         ],
     ],
 

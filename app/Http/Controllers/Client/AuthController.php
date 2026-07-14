@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ClientLoginRequest;
 use App\Models\Client;
 use App\Services\ClientPasswordService;
+use Illuminate\Http\Request;
 
 class AuthController extends Controller
 {
@@ -20,40 +21,51 @@ class AuthController extends Controller
 
     public function login(ClientLoginRequest $request)
     {
-        $client = Client::where('email', $request->email)->first();
+        $clients = Client::where('email', $request->email)->get();
 
-        if (!$client) {
+        if ($clients->isEmpty()) {
             return back()
                 ->withInput($request->only('email'))
                 ->with('error', 'Invalid credentials.');
         }
 
-        try {
-            $decryptedPassword = $this->clientPasswordService->decrypt($client->password_encrypted);
-
-            if (!hash_equals($decryptedPassword, $request->password)) {
-                return back()
-                    ->withInput($request->only('email'))
-                    ->with('error', 'Invalid credentials.');
+        $matches = $clients->filter(function (Client $client) use ($request): bool {
+            try {
+                return hash_equals(
+                    $this->clientPasswordService->decrypt($client->password_encrypted),
+                    $request->password
+                );
+            } catch (\Throwable) {
+                return false;
             }
-        } catch (\Throwable $e) {
+        })->values();
+
+        if ($matches->count() !== 1) {
             return back()
                 ->withInput($request->only('email'))
-                ->with('error', 'Unable to verify credentials. Please contact the event organizer.');
+                ->with('error', $matches->isEmpty()
+                    ? 'Invalid credentials.'
+                    : 'These credentials match multiple events. Please contact the event organizer.');
         }
+
+        $client = $matches->first();
 
         session([
             'client_id' => $client->id,
             'event_id' => $client->event_id,
+            'client_auth_version' => $client->auth_version,
             'client_login_at' => now(),
         ]);
+        $request->session()->regenerate();
 
         return redirect()->route('client.dashboard');
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
-        session()->flush();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
         return redirect()->route('client.login');
     }
 }

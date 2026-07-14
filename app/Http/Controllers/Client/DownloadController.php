@@ -21,7 +21,7 @@ class DownloadController extends Controller
             abort(404);
         }
 
-        if (!$submission->isCompleted()) {
+        if (! $submission->isCompleted()) {
             abort(404);
         }
 
@@ -34,11 +34,11 @@ class DownloadController extends Controller
             $query->where('status', Submission::STATUS_COMPLETED);
         }])->find(session('event_id'));
 
-        if (!$event) {
+        if (! $event) {
             abort(404);
         }
 
-        if (!$this->downloadService->canDownloadEventZip($event)) {
+        if (! $this->downloadService->canDownloadEventZip($event)) {
             return back()->with('error', 'This event is too large for a single ZIP download. Please download individual submissions instead.');
         }
 

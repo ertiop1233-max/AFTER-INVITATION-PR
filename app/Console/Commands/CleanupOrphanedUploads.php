@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 class CleanupOrphanedUploads extends Command
 {
     protected $signature = 'memoryvault:cleanup';
+
     protected $description = 'Clean up orphaned draft submissions and stale media';
 
     public function handle(CleanupService $cleanupService): int
@@ -17,6 +18,7 @@ class CleanupOrphanedUploads extends Command
         $cleanupService->cleanupOrphanedUploads();
 
         $this->info('Cleanup complete.');
+
         return self::SUCCESS;
     }
 }

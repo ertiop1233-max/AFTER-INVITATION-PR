@@ -12,7 +12,7 @@ class UploadPageController extends Controller
     {
         $event = Event::where('upload_token', $token)->first();
 
-        if (!$event) {
+        if (! $event) {
             return view('upload.not-found');
         }
 
@@ -31,8 +31,8 @@ class UploadPageController extends Controller
 
         $maxBytes = $event->max_submission_size_bytes;
         $maxDisplay = $maxBytes >= 1073741824
-            ? number_format($maxBytes / 1073741824, 1) . ' GB'
-            : number_format($maxBytes / 1048576, 0) . ' MB';
+            ? number_format($maxBytes / 1073741824, 1).' GB'
+            : number_format($maxBytes / 1048576, 0).' MB';
 
         return view('upload.page', [
             'event' => $event,
@@ -44,6 +44,7 @@ class UploadPageController extends Controller
             'maxConcurrent' => config('memoryvault.upload_max_concurrent', 3),
             'maxRetries' => config('memoryvault.upload_max_retries', 3),
             'chunkSize' => config('memoryvault.upload_chunk_size', 8388608),
+            'requestTimeout' => config('memoryvault.upload_request_timeout_ms', 120000),
             'voiceMaxDuration' => config('memoryvault.voice.max_duration_seconds', 600),
             'voiceMaxSize' => config('memoryvault.voice.max_file_size_bytes', 15728640),
         ]);

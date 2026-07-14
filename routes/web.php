@@ -20,7 +20,7 @@ Route::get('/', function () {
 Route::get('/memories/{slug}/{token}', [UploadPageController::class, 'show'])
     ->name('upload.page');
 
-Route::get('/health', [HealthController::class, 'check']);
+Route::get('/health', [HealthController::class, 'check'])->middleware('throttle:health');
 
 Route::prefix('admin')->group(function () {
     Route::get('login', [AdminAuthController::class, 'showLogin'])->name('admin.login');

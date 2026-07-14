@@ -4,7 +4,6 @@ namespace App\Services;
 
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class QrService
@@ -20,15 +19,12 @@ class QrService
         $pngData = $this->generatePng($url);
 
         if ($pngData === null) {
-            $pngData = $this->generateViaFallback($url);
-        }
+            Log::error('Local QR generation failed');
 
-        if ($pngData === null) {
-            Log::error('QR generation failed: both local and fallback methods failed');
             return null;
         }
 
-        $this->deleteExistingQr($folderId);
+        $existing = $this->findQrFile($folderId);
 
         try {
             $fileId = $this->storageService->uploadSmallFile(
@@ -37,11 +33,21 @@ class QrService
                 'image/png',
                 $pngData
             );
+
+            if ($existing && $existing['id'] !== $fileId) {
+                try {
+                    $this->storageService->deleteFile($existing['id']);
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to delete replaced QR code', ['error' => $e->getMessage()]);
+                }
+            }
+
             return $fileId;
         } catch (\Throwable $e) {
             Log::warning('QR upload failed, but event creation continues', [
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -55,7 +61,7 @@ class QrService
     {
         $file = $this->findQrFile($folderId);
 
-        if (!$file) {
+        if (! $file) {
             return null;
         }
 
@@ -65,11 +71,11 @@ class QrService
     public function generatePng(string $url): ?string
     {
         try {
-            if (!class_exists(QRCode::class)) {
+            if (! class_exists(QRCode::class)) {
                 return null;
             }
 
-            if (!extension_loaded('gd')) {
+            if (! extension_loaded('gd')) {
                 return null;
             }
 
@@ -83,42 +89,8 @@ class QrService
             return (new QRCode($options))->render($url);
         } catch (\Throwable $e) {
             Log::warning('Local QR generation failed', ['error' => $e->getMessage()]);
+
             return null;
-        }
-    }
-
-    public function generateViaFallback(string $url): ?string
-    {
-        try {
-            $apiUrl = config('memoryvault.qr.fallback_api_url');
-            $response = Http::timeout(30)->get($apiUrl, [
-                'data' => $url,
-                'size' => '500x500',
-                'format' => 'png',
-            ]);
-
-            if ($response->successful()) {
-                return $response->body();
-            }
-
-            Log::warning('QR fallback API returned error', ['status' => $response->status()]);
-            return null;
-        } catch (\Throwable $e) {
-            Log::warning('QR fallback API failed', ['error' => $e->getMessage()]);
-            return null;
-        }
-    }
-
-    private function deleteExistingQr(string $folderId): void
-    {
-        $existing = $this->findQrFile($folderId);
-
-        if ($existing) {
-            try {
-                $this->storageService->deleteFile($existing['id']);
-            } catch (\Throwable $e) {
-                Log::warning('Failed to delete existing QR code', ['error' => $e->getMessage()]);
-            }
         }
     }
 }

@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Event;
 use App\Models\Media;
 use App\Models\Submission;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -24,17 +23,17 @@ class SubmissionService
         $existing = Submission::where('upload_session_key', $uploadSessionKey)->first();
 
         if ($existing) {
-            if ($existing->isCompleted()) {
-                return [
-                    'status' => 'completed',
-                    'submission_id' => $existing->id,
-                ];
-            }
-
             if ($existing->event_id !== $event->id) {
                 return [
                     'status' => 'invalid',
                     'submission_id' => null,
+                ];
+            }
+
+            if ($existing->isCompleted()) {
+                return [
+                    'status' => 'completed',
+                    'submission_id' => $existing->id,
                 ];
             }
 
@@ -53,7 +52,7 @@ class SubmissionService
         $folderId = null;
         try {
             $folderId = $this->storageService->createFolder(
-                "sub_" . Str::random(12),
+                'sub_'.Str::random(12),
                 $event->storage_root_folder_id
             );
         } catch (\Throwable $e) {
@@ -77,7 +76,7 @@ class SubmissionService
                 'submission_id' => $submission->id,
                 'storage_folder_id' => $folderId,
             ];
-        } catch (QueryException $e) {
+        } catch (\Throwable $e) {
             Log::error('Submission DB creation failed, compensating with Drive cleanup', [
                 'folder_id' => $folderId,
                 'error' => $e->getMessage(),
@@ -89,19 +88,39 @@ class SubmissionService
 
     public function finalize(Submission $submission, ?string $message = null, ?array $voiceData = null): Submission
     {
-        if ($submission->isCompleted()) {
-            return $submission;
-        }
-
         return DB::transaction(function () use ($submission, $message, $voiceData) {
-            $uploadedMedia = $submission->media()
-                ->where('status', Media::STATUS_UPLOADED)
+            $lockedSubmission = Submission::with('event')->lockForUpdate()->findOrFail($submission->id);
+
+            if ($lockedSubmission->isCompleted()) {
+                return $lockedSubmission;
+            }
+
+            if ($lockedSubmission->event->isClosed() || $lockedSubmission->event->isUploadDeadlinePassed()) {
+                throw new \DomainException('This event is no longer accepting submissions.');
+            }
+
+            $allMedia = $lockedSubmission->media()
                 ->lockForUpdate()
                 ->get();
 
-            $photoCount = $uploadedMedia->where('media_type', Media::TYPE_PHOTO)->count();
-            $videoCount = $uploadedMedia->where('media_type', Media::TYPE_VIDEO)->count();
-            $totalSize = (int) $uploadedMedia->sum('file_size_bytes');
+            if ($allMedia->contains(fn (Media $media) => ! $media->isUploaded())) {
+                throw new \DomainException('All media uploads must finish before finalizing.');
+            }
+
+            $normalizedMessage = $message !== null ? trim($message) : '';
+            if ($normalizedMessage !== '' && ! $lockedSubmission->event->allow_messages) {
+                throw new \DomainException('Written messages are not allowed for this event.');
+            }
+
+            $voiceStorageId = $voiceData['voice_storage_id'] ?? $lockedSubmission->voice_storage_id;
+            $voiceSize = (int) ($voiceData['voice_size_bytes'] ?? $lockedSubmission->voice_size_bytes ?? 0);
+            if ($voiceStorageId && ! $lockedSubmission->event->allow_voice) {
+                throw new \DomainException('Voice messages are not allowed for this event.');
+            }
+
+            $photoCount = $allMedia->where('media_type', Media::TYPE_PHOTO)->count();
+            $videoCount = $allMedia->where('media_type', Media::TYPE_VIDEO)->count();
+            $totalSize = (int) $allMedia->sum('file_size_bytes');
 
             $updateData = [
                 'status' => Submission::STATUS_COMPLETED,
@@ -111,26 +130,26 @@ class SubmissionService
                 'total_size_bytes' => $totalSize,
             ];
 
-            if ($message !== null && trim($message) !== '') {
-                $updateData['written_message'] = $message;
+            if ($normalizedMessage !== '') {
+                $updateData['written_message'] = $normalizedMessage;
             }
 
             if ($voiceData !== null) {
                 $updateData = array_merge($updateData, $voiceData);
             }
 
-            $submission->update($updateData);
+            $lockedSubmission->update($updateData);
 
-            $this->eventService->incrementCounters($submission->event, [
+            $this->eventService->incrementCounters($lockedSubmission->event, [
                 'submissions' => 1,
                 'photos' => $photoCount,
                 'videos' => $videoCount,
-                'voice' => isset($voiceData['voice_storage_id']) ? 1 : 0,
-                'messages' => ($message !== null && trim($message) !== '') ? 1 : 0,
-                'storage_bytes' => $totalSize + ($voiceData['voice_size_bytes'] ?? 0),
+                'voice' => $voiceStorageId ? 1 : 0,
+                'messages' => $normalizedMessage !== '' ? 1 : 0,
+                'storage_bytes' => $totalSize + $voiceSize,
             ]);
 
-            return $submission->fresh();
+            return $lockedSubmission->fresh();
         });
     }
 
@@ -141,15 +160,30 @@ class SubmissionService
 
     public function deleteSubmission(Submission $submission): void
     {
-        $submission->load('media');
+        $submission->load(['media', 'event']);
 
         $resources = $this->cleanupService->collectSubmissionResourceIds($submission);
 
         DB::transaction(function () use ($submission, $resources) {
-            $this->cleanupService->enqueueDeletions($resources);
-            $submission->delete();
-        });
+            $lockedSubmission = Submission::with('event')->lockForUpdate()->find($submission->id);
+            if (! $lockedSubmission) {
+                return;
+            }
 
-        $this->cleanupService->processPendingJobs();
+            $this->cleanupService->enqueueDeletions($resources);
+
+            if ($lockedSubmission->isCompleted()) {
+                $this->eventService->incrementCounters($lockedSubmission->event, [
+                    'submissions' => -1,
+                    'photos' => -$lockedSubmission->total_photos,
+                    'videos' => -$lockedSubmission->total_videos,
+                    'voice' => $lockedSubmission->hasVoice() ? -1 : 0,
+                    'messages' => $lockedSubmission->hasMessage() ? -1 : 0,
+                    'storage_bytes' => -($lockedSubmission->total_size_bytes + ($lockedSubmission->voice_size_bytes ?? 0)),
+                ]);
+            }
+
+            $lockedSubmission->delete();
+        });
     }
 }

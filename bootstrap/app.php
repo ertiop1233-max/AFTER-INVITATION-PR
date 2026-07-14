@@ -1,10 +1,11 @@
 <?php
 
+use App\Http\Middleware\AdminAuthenticate;
+use App\Http\Middleware\ClientAuthenticate;
+use App\Http\Middleware\VerifyUploadNonce;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Http\Request;
-use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -15,12 +16,11 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
-            'admin.auth' => App\Http\Middleware\AdminAuthenticate::class,
-            'client.auth' => App\Http\Middleware\ClientAuthenticate::class,
-            'verify.upload.nonce' => App\Http\Middleware\VerifyUploadNonce::class,
+            'admin.auth' => AdminAuthenticate::class,
+            'client.auth' => ClientAuthenticate::class,
+            'verify.upload.nonce' => VerifyUploadNonce::class,
         ]);
 
-        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

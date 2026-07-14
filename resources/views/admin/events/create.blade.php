@@ -45,9 +45,13 @@
         <div class="form-group">
             <label class="label">Allowed Media Types</label>
             <div class="checkbox-group">
+                <input type="hidden" name="allow_photos" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_photos" value="1" {{ old('allow_photos', true) ? 'checked' : '' }}> Photos</label>
+                <input type="hidden" name="allow_videos" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_videos" value="1" {{ old('allow_videos', true) ? 'checked' : '' }}> Videos</label>
+                <input type="hidden" name="allow_voice" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_voice" value="1" {{ old('allow_voice', true) ? 'checked' : '' }}> Voice</label>
+                <input type="hidden" name="allow_messages" value="0">
                 <label class="checkbox-label"><input type="checkbox" name="allow_messages" value="1" {{ old('allow_messages', true) ? 'checked' : '' }}> Messages</label>
             </div>
         </div>
@@ -67,7 +71,7 @@
         </div>
         <div class="form-group">
             <label class="label" for="client_password">Client Password</label>
-            <input class="input" type="text" id="client_password" name="client_password" value="{{ old('client_password') }}" required>
+            <input class="input" type="password" id="client_password" name="client_password" autocomplete="new-password" required>
             <p style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:var(--space-1)">This password will be shared with the client to access their dashboard.</p>
         </div>
     </div>

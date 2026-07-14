@@ -19,7 +19,7 @@ class EventController extends Controller
         $query = Event::query();
 
         if ($request->filled('search')) {
-            $query->where('title', 'like', '%' . $request->search . '%');
+            $query->where('title', 'like', '%'.$request->search.'%');
         }
 
         if ($request->filled('status')) {
@@ -117,6 +117,7 @@ class EventController extends Controller
     public function credentials(Event $event)
     {
         $event->load('client');
+
         return view('admin.events.credentials', compact('event'));
     }
 
@@ -135,18 +136,18 @@ class EventController extends Controller
     {
         $stream = $this->eventService->getQrCodeStream($event);
 
-        if (!$stream) {
+        if (! $stream) {
             return back()->with('error', 'QR code not found. Try regenerating it.');
         }
 
         return response()->stream(function () use ($stream) {
-            while (!$stream->eof()) {
+            while (! $stream->eof()) {
                 echo $stream->read(8192);
                 flush();
             }
         }, 200, [
             'Content-Type' => 'image/png',
-            'Content-Disposition' => 'attachment; filename="qr_' . $event->upload_slug . '.png"',
+            'Content-Disposition' => 'attachment; filename="qr_'.$event->upload_slug.'.png"',
             'Cache-Control' => 'no-store',
         ]);
     }

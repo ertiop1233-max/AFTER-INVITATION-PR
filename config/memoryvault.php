@@ -12,6 +12,8 @@ return [
 
     'upload_chunk_size' => (int) env('MEMORYVAULT_UPLOAD_CHUNK_SIZE', 8388608),
 
+    'upload_request_timeout_ms' => (int) env('MEMORYVAULT_UPLOAD_REQUEST_TIMEOUT_MS', 120000),
+
     'upload_nonce_ttl_hours' => (int) env('MEMORYVAULT_UPLOAD_NONCE_TTL_HOURS', 24),
 
     'drive_quota_warning_percent' => (int) env('MEMORYVAULT_DRIVE_QUOTA_WARNING_PERCENT', 80),
@@ -47,7 +49,4 @@ return [
         'max_event_zip_bytes' => 5368709120,
     ],
 
-    'qr' => [
-        'fallback_api_url' => 'https://api.qrserver.com/v1/create-qr-code/',
-    ],
 ];
