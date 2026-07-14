@@ -41,7 +41,7 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (! $event || $submission->event_id !== $event->id) {
+        if (! $event || $submission->event_id !== $event->id || ! $submission->isCompleted()) {
             abort(404);
         }
 
@@ -71,7 +71,7 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (! $event || $submission->event_id !== $event->id) {
+        if (! $event || $submission->event_id !== $event->id || ! $submission->isCompleted()) {
             abort(404);
         }
 
@@ -97,7 +97,7 @@ class SubmissionController extends Controller
         }, 200, [
             'Content-Type' => $mimeType,
             'Content-Disposition' => 'inline; filename="voice_recording.'.$extension.'"',
-            'Cache-Control' => 'private, no-store',
+            'Cache-Control' => 'private, max-age=300, must-revalidate',
         ]);
     }
 

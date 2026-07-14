@@ -100,42 +100,58 @@ class UploadService
             }
         }
 
-        return DB::transaction(function () use ($media, $data, $offset, $totalSize): array {
-            $lockedMedia = Media::with('submission')->lockForUpdate()->find($media->id);
+        $completionAttempted = false;
 
-            if (! $lockedMedia || ! $lockedMedia->resumable_uri || $lockedMedia->status !== Media::STATUS_UPLOADING) {
-                throw new DomainException('Media is no longer accepting upload chunks.');
-            }
+        try {
+            return DB::transaction(function () use ($media, $data, $offset, $totalSize, &$completionAttempted): array {
+                $lockedMedia = Media::with('submission')->lockForUpdate()->find($media->id);
 
-            if (! $lockedMedia->submission->isDraft()) {
-                throw new DomainException('Submission is no longer accepting uploads.');
-            }
-
-            if ($totalSize !== $lockedMedia->file_size_bytes || $offset !== $lockedMedia->uploaded_bytes) {
-                throw new DomainException('Upload chunk is out of sequence.');
-            }
-
-            $result = $this->storageService->uploadChunk(
-                $lockedMedia->resumable_uri,
-                $data,
-                $offset,
-                $totalSize
-            );
-
-            if ($result['completed']) {
-                $fileId = $result['file_id'] ?? null;
-                if (! $fileId) {
-                    throw new RuntimeException('Storage provider did not return a completed file ID.');
+                if (! $lockedMedia || ! $lockedMedia->resumable_uri || $lockedMedia->status !== Media::STATUS_UPLOADING) {
+                    throw new DomainException('Media is no longer accepting upload chunks.');
                 }
-                $this->completeUploadFromMetadata($lockedMedia, $fileId, (int) $result['size']);
-            } else {
-                $lockedMedia->update([
-                    'uploaded_bytes' => (int) ($result['uploaded_bytes'] ?? ($offset + strlen($data))),
-                ]);
+
+                if (! $lockedMedia->submission->isDraft()) {
+                    throw new DomainException('Submission is no longer accepting uploads.');
+                }
+
+                if ($totalSize !== $lockedMedia->file_size_bytes || $offset !== $lockedMedia->uploaded_bytes) {
+                    throw new DomainException('Upload chunk is out of sequence.');
+                }
+
+                $result = $this->storageService->uploadChunk(
+                    $lockedMedia->resumable_uri,
+                    $data,
+                    $offset,
+                    $totalSize
+                );
+
+                if ($result['completed']) {
+                    $completionAttempted = true;
+                    $fileId = $result['file_id'] ?? null;
+                    if (! $fileId) {
+                        throw new RuntimeException('Storage provider did not return a completed file ID.');
+                    }
+                    $this->completeUploadFromMetadata($lockedMedia, $fileId, (int) $result['size']);
+                } else {
+                    $lockedMedia->update([
+                        'uploaded_bytes' => (int) ($result['uploaded_bytes'] ?? ($offset + strlen($data))),
+                    ]);
+                }
+
+                return $result;
+            });
+        } catch (\Throwable $e) {
+            if ($completionAttempted) {
+                Media::whereKey($media->id)
+                    ->where('status', Media::STATUS_UPLOADING)
+                    ->update([
+                        'status' => Media::STATUS_FAILED,
+                        'resumable_uri' => null,
+                    ]);
             }
 
-            return $result;
-        });
+            throw $e;
+        }
     }
 
     public function completeUploadByLookup(Media $media): Media

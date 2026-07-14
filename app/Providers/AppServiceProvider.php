@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -17,6 +18,18 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $trustedProxies = config('app.trusted_proxies', []);
+
+        if ($trustedProxies !== []) {
+            TrustProxies::at($trustedProxies);
+            TrustProxies::withHeaders(
+                Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_HOST
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO
+            );
+        }
+
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by(
                 Str::lower((string) $request->input('email')).'|'.$request->ip()

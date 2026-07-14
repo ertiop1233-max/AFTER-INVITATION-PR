@@ -20,7 +20,7 @@ class MediaController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (! $event || $media->event_id !== $event->id) {
+        if (! $event || $media->event_id !== $event->id || ! $media->isUploaded()) {
             abort(404);
         }
 
@@ -30,7 +30,7 @@ class MediaController extends Controller
 
         $stream = $this->storageService->getFileStream($media->storage_id);
 
-        $disposition = ResponseHeaderBag::makeDisposition(
+        $disposition = (new ResponseHeaderBag)->makeDisposition(
             ResponseHeaderBag::DISPOSITION_INLINE,
             $media->original_filename,
             "media-{$media->id}.{$media->extension}"
@@ -44,7 +44,7 @@ class MediaController extends Controller
         }, 200, [
             'Content-Type' => $media->mime_type,
             'Content-Disposition' => $disposition,
-            'Cache-Control' => 'private, no-store',
+            'Cache-Control' => 'private, max-age=300, must-revalidate',
         ]);
     }
 
@@ -52,7 +52,7 @@ class MediaController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (! $event || $media->event_id !== $event->id) {
+        if (! $event || $media->event_id !== $event->id || ! $media->isUploaded()) {
             abort(404);
         }
 
@@ -69,7 +69,7 @@ class MediaController extends Controller
             }
         }, 200, [
             'Content-Type' => 'image/jpeg',
-            'Cache-Control' => 'private, max-age=86400',
+            'Cache-Control' => 'private, max-age=300, must-revalidate',
         ]);
     }
 

@@ -11,8 +11,12 @@ use App\Models\Submission;
 use App\Services\ClientPasswordService;
 use App\Services\EventService;
 use App\Services\UploadService;
+use DomainException;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class SecurityRemediationTest extends TestCase
@@ -179,6 +183,159 @@ class SecurityRemediationTest extends TestCase
         $this->assertSame(0, $event->fresh()->total_storage_bytes);
     }
 
+    public function test_client_streams_reject_resources_that_are_not_ready(): void
+    {
+        [$event, $submission] = $this->createEventAndSubmission('readiness', 'readiness-token');
+        $media = Media::create([
+            'submission_id' => $submission->id,
+            'event_id' => $event->id,
+            'media_type' => Media::TYPE_PHOTO,
+            'original_filename' => 'photo.jpg',
+            'stored_filename' => 'stored.jpg',
+            'mime_type' => 'image/jpeg',
+            'extension' => 'jpg',
+            'file_size_bytes' => 1024,
+            'storage_path' => 'path',
+            'storage_id' => 'partial-file',
+            'thumbnail_storage_id' => 'partial-thumbnail',
+            'status' => Media::STATUS_UPLOADING,
+        ]);
+        $submission->update([
+            'voice_storage_id' => 'draft-voice',
+            'voice_storage_path' => 'voice/draft.webm',
+        ]);
+
+        $this->withSession($this->clientSession($event))
+            ->get(route('client.media.view', $media))
+            ->assertNotFound();
+        $this->get(route('client.media.thumbnail', $media))->assertNotFound();
+        $this->get(route('client.submissions.voice', $submission))->assertNotFound();
+    }
+
+    public function test_ready_client_streams_use_a_short_private_cache(): void
+    {
+        [$event, $submission] = $this->createEventAndSubmission('cache', 'cache-token');
+        $submission->update([
+            'status' => Submission::STATUS_COMPLETED,
+            'submitted_at' => now(),
+            'voice_storage_id' => 'voice-file',
+            'voice_storage_path' => 'voice/recording.webm',
+        ]);
+        $media = Media::create([
+            'submission_id' => $submission->id,
+            'event_id' => $event->id,
+            'media_type' => Media::TYPE_PHOTO,
+            'original_filename' => 'photo.jpg',
+            'stored_filename' => 'stored.jpg',
+            'mime_type' => 'image/jpeg',
+            'extension' => 'jpg',
+            'file_size_bytes' => 1024,
+            'storage_path' => 'path',
+            'storage_id' => 'ready-file',
+            'thumbnail_storage_id' => 'ready-thumbnail',
+            'status' => Media::STATUS_UPLOADED,
+            'uploaded_at' => now(),
+        ]);
+
+        $provider = $this->mockStorageProvider();
+        $provider->shouldReceive('getFileStream')
+            ->times(3)
+            ->andReturnUsing(fn () => Utils::streamFor('ready'));
+
+        $this->withSession($this->clientSession($event));
+        $responses = [
+            $this->get(route('client.media.view', $media)),
+            $this->get(route('client.media.thumbnail', $media)),
+            $this->get(route('client.submissions.voice', $submission)),
+        ];
+
+        foreach ($responses as $response) {
+            $response->assertOk();
+            $response->assertHeader('Cache-Control', 'max-age=300, must-revalidate, private');
+        }
+    }
+
+    public function test_failed_chunk_completion_persists_failed_state_after_transaction_rollback(): void
+    {
+        [$event, $submission] = $this->createEventAndSubmission('rollback', 'rollback-token');
+        $media = Media::create([
+            'submission_id' => $submission->id,
+            'event_id' => $event->id,
+            'media_type' => Media::TYPE_PHOTO,
+            'original_filename' => 'photo.jpg',
+            'stored_filename' => 'stored.jpg',
+            'mime_type' => 'image/jpeg',
+            'extension' => 'jpg',
+            'file_size_bytes' => 5,
+            'storage_path' => 'path',
+            'resumable_uri' => 'https://upload.example.test/session',
+            'status' => Media::STATUS_UPLOADING,
+        ]);
+
+        $provider = $this->mockStorageProvider();
+        $provider->shouldReceive('uploadChunk')->once()->andReturn([
+            'completed' => true,
+            'file_id' => 'wrong-sized-file',
+            'size' => 4,
+        ]);
+
+        try {
+            app(UploadService::class)->processChunk($media, "\xFF\xD8\xFF\xE0\x00", 0, 5);
+            $this->fail('A size mismatch should fail upload completion.');
+        } catch (DomainException $e) {
+            $this->assertSame('File size mismatch.', $e->getMessage());
+        }
+
+        $media->refresh();
+        $this->assertSame(Media::STATUS_FAILED, $media->status);
+        $this->assertNull($media->resumable_uri);
+        $this->assertNull($media->storage_id);
+        $this->assertFalse($media->isUploaded());
+    }
+
+    public function test_hardening_migration_reports_duplicate_cleanup_jobs_before_schema_changes(): void
+    {
+        $migration = require database_path('migrations/2026_07_14_000008_harden_sessions_uploads_and_cleanup.php');
+        $migration->down();
+
+        DB::table('drive_cleanup_jobs')->insert([
+            [
+                'drive_resource_id' => 'duplicate-file',
+                'resource_type' => 'file',
+                'status' => 'pending',
+                'attempts' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'drive_resource_id' => 'duplicate-file',
+                'resource_type' => 'file',
+                'status' => 'failed',
+                'attempts' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $message = null;
+
+        try {
+            $migration->up();
+        } catch (\RuntimeException $e) {
+            $message = $e->getMessage();
+        } finally {
+            DB::table('drive_cleanup_jobs')->where('drive_resource_id', 'duplicate-file')->delete();
+
+            if (! Schema::hasColumn('clients', 'auth_version')) {
+                $migration->up();
+            }
+        }
+
+        $this->assertNotNull($message);
+        $this->assertStringContainsString('drive_resource_id=duplicate-file', $message);
+        $this->assertStringContainsString('resource_type=file', $message);
+    }
+
     private function createEventAndSubmission(string $slug, string $token): array
     {
         $event = Event::create([
@@ -206,6 +363,23 @@ class SecurityRemediationTest extends TestCase
         return [
             'X-Upload-Nonce' => VerifyUploadNonce::generateNonce($event->upload_token),
             'X-Upload-Token' => $event->upload_token,
+        ];
+    }
+
+    private function clientSession(Event $event): array
+    {
+        $client = Client::create([
+            'event_id' => $event->id,
+            'name' => 'Client',
+            'email' => $event->upload_slug.'@example.com',
+            'password_encrypted' => app(ClientPasswordService::class)->encrypt('Password123!'),
+        ]);
+
+        return [
+            'client_id' => $client->id,
+            'event_id' => $event->id,
+            'client_auth_version' => $client->auth_version,
+            'client_login_at' => now(),
         ];
     }
 }
