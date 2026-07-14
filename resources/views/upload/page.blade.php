@@ -25,6 +25,8 @@
             class="dropzone"
             :class="{ 'disabled': !nameValid || preparing }"
             @click="$refs.fileInput.click()"
+            @keydown.enter.prevent="$refs.fileInput.click()"
+            @keydown.space.prevent="$refs.fileInput.click()"
             @dragover.prevent="dragover = true"
             @dragleave.prevent="dragover = false"
             @drop.prevent="handleDrop($event)"
@@ -164,6 +166,11 @@ function uploadApp() {
                     file.status = entry.status;
                     file.progress = entry.progress;
                     file.error = entry.error;
+
+                    if (entry.status === 'done' && file.thumbnail && !file.thumbnailUploaded) {
+                        file.thumbnailUploaded = true;
+                        this.uploadThumbnail(mediaId, file.thumbnail);
+                    }
                 }
             };
 
@@ -273,9 +280,6 @@ function uploadApp() {
 
                     this.fileQueue.addFile(file, fileId, result.upload_uri || null, window.uploadStrategy);
 
-                    if (thumbnail) {
-                        this.uploadThumbnail(fileId, thumbnail);
-                    }
                 } catch (e) {
                     this.files.push({ id: Date.now() + Math.random(), name: file.name, size: file.size, status: 'failed', error: 'Network error.', progress: 0 });
                 }
@@ -284,7 +288,7 @@ function uploadApp() {
 
         async uploadThumbnail(mediaId, thumbnailData) {
             try {
-                await fetch('/api/upload/thumbnail', {
+                const response = await fetch('/api/upload/thumbnail', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -296,6 +300,10 @@ function uploadApp() {
                         thumbnail_data: thumbnailData.split(',')[1],
                     }),
                 });
+
+                if (!response.ok) {
+                    throw new Error('Thumbnail upload was rejected.');
+                }
             } catch (e) {
                 console.warn('Thumbnail upload failed:', e);
             }
@@ -401,8 +409,7 @@ function uploadApp() {
                         this.recording = false;
                     },
                 });
-                await this.recorder.start();
-                this.recording = true;
+                this.recording = await this.recorder.start();
             }
         },
 

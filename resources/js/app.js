@@ -1,10 +1,7 @@
-import Alpine from 'alpinejs';
-import { createIcons, icons } from 'lucide';
-
-Alpine.start();
-
-document.addEventListener('DOMContentLoaded', () => {
-    createIcons({ icons });
-});
+import Alpine from '@alpinejs/csp';
 
 window.Alpine = Alpine;
+
+document.addEventListener('DOMContentLoaded', () => {
+    Alpine.start();
+}, { once: true });

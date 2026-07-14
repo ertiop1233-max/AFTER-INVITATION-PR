@@ -20,7 +20,7 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (!$event) {
+        if (! $event) {
             return redirect()->route('client.login');
         }
 
@@ -29,7 +29,7 @@ class SubmissionController extends Controller
             ->orderBy('submitted_at', 'desc');
 
         if ($request->filled('search')) {
-            $query->where('contributor_name', 'like', $request->search . '%');
+            $query->where('contributor_name', 'like', $request->search.'%');
         }
 
         $submissions = $query->cursorPaginate(20);
@@ -41,7 +41,7 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if ($submission->event_id !== $event->id) {
+        if (! $event || $submission->event_id !== $event->id) {
             abort(404);
         }
 
@@ -56,7 +56,7 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if ($submission->event_id !== $event->id) {
+        if (! $event || $submission->event_id !== $event->id) {
             abort(404);
         }
 
@@ -71,11 +71,11 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if ($submission->event_id !== $event->id) {
+        if (! $event || $submission->event_id !== $event->id) {
             abort(404);
         }
 
-        if (!$submission->voice_storage_id) {
+        if (! $submission->voice_storage_id) {
             abort(404);
         }
 
@@ -90,13 +90,14 @@ class SubmissionController extends Controller
         };
 
         return response()->stream(function () use ($stream) {
-            while (!$stream->eof()) {
+            while (! $stream->eof()) {
                 echo $stream->read(8192);
                 flush();
             }
         }, 200, [
             'Content-Type' => $mimeType,
-            'Content-Disposition' => 'inline; filename="voice_recording.' . $extension . '"',
+            'Content-Disposition' => 'inline; filename="voice_recording.'.$extension.'"',
+            'Cache-Control' => 'private, no-store',
         ]);
     }
 
@@ -104,7 +105,7 @@ class SubmissionController extends Controller
     {
         $event = Event::find(session('event_id'));
 
-        if (!$event) {
+        if (! $event) {
             return redirect()->route('client.login');
         }
 
@@ -113,7 +114,7 @@ class SubmissionController extends Controller
             ->orderBy('submitted_at', 'desc');
 
         if ($request->filled('q')) {
-            $query->where('contributor_name', 'like', $request->q . '%');
+            $query->where('contributor_name', 'like', $request->q.'%');
         }
 
         $submissions = $query->cursorPaginate(20);

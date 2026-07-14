@@ -1,6 +1,9 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\StorageServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\StorageServiceProvider::class,
+    AppServiceProvider::class,
+    StorageServiceProvider::class,
 ];

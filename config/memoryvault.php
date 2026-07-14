@@ -47,7 +47,4 @@ return [
         'max_event_zip_bytes' => 5368709120,
     ],
 
-    'qr' => [
-        'fallback_api_url' => 'https://api.qrserver.com/v1/create-qr-code/',
-    ],
 ];

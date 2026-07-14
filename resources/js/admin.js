@@ -1,5 +1,1 @@
-import Alpine from 'alpinejs';
-
-Alpine.start();
-
-window.Alpine = Alpine;
+// Admin-specific JavaScript belongs in this entry point.

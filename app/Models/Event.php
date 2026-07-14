@@ -47,7 +47,9 @@ class Event extends Model
     ];
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_CLOSED = 'closed';
 
     public function client(): HasOne
@@ -87,5 +89,6 @@ class Event extends Model
 
     public static function generateUploadSlug(string $title): string
     {
-        return Str::slug($title) . '-' . Str::random(8);
-    }}
+        return Str::slug($title).'-'.Str::random(8);
+    }
+}

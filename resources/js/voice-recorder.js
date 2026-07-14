@@ -7,6 +7,7 @@ class VoiceRecorder {
         this.startTime = 0;
         this.timerInterval = null;
         this.isRecording = false;
+        this.cancelled = false;
         this.onStateChange = options.onStateChange || (() => {});
         this.onComplete = options.onComplete || (() => {});
         this.onError = options.onError || (() => {});
@@ -19,15 +20,19 @@ class VoiceRecorder {
             const mimeType = this.selectMimeType();
             this.mediaRecorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : {});
             this.chunks = [];
+            this.cancelled = false;
 
             this.mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) this.chunks.push(e.data);
             };
 
             this.mediaRecorder.onstop = () => {
-                const blob = new Blob(this.chunks, { type: this.mediaRecorder.mimeType });
+                const mimeType = this.mediaRecorder?.mimeType || '';
+                const blob = new Blob(this.chunks, { type: mimeType });
                 const duration = Math.round((Date.now() - this.startTime) / 1000);
-                this.onComplete(blob, this.mediaRecorder.mimeType, duration);
+                if (!this.cancelled && blob.size > 0) {
+                    this.onComplete(blob, mimeType, duration);
+                }
                 this.cleanup();
             };
 
@@ -41,13 +46,18 @@ class VoiceRecorder {
             this.isRecording = true;
             this.startTimer();
             this.onStateChange('recording');
+            return true;
         } catch (error) {
+            this.isRecording = false;
+            this.cleanup();
             this.onError(error);
+            return false;
         }
     }
 
     stop() {
         if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            this.cancelled = false;
             this.mediaRecorder.stop();
             this.isRecording = false;
             this.stopTimer();
@@ -57,7 +67,7 @@ class VoiceRecorder {
 
     cancel() {
         if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-            this.chunks = [];
+            this.cancelled = true;
             this.mediaRecorder.stop();
             this.isRecording = false;
             this.stopTimer();
@@ -99,6 +109,8 @@ class VoiceRecorder {
             this.stream = null;
         }
         this.stopTimer();
+        this.mediaRecorder = null;
+        this.chunks = [];
     }
 }
 

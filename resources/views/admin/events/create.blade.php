@@ -67,7 +67,7 @@
         </div>
         <div class="form-group">
             <label class="label" for="client_password">Client Password</label>
-            <input class="input" type="text" id="client_password" name="client_password" value="{{ old('client_password') }}" required>
+            <input class="input" type="password" id="client_password" name="client_password" autocomplete="new-password" required>
             <p style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:var(--space-1)">This password will be shared with the client to access their dashboard.</p>
         </div>
     </div>

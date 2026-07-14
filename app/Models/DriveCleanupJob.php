@@ -21,10 +21,15 @@ class DriveCleanupJob extends Model
     ];
 
     public const STATUS_PENDING = 'pending';
+
+    public const STATUS_PROCESSING = 'processing';
+
     public const STATUS_COMPLETED = 'completed';
+
     public const STATUS_FAILED = 'failed';
 
     public const RESOURCE_FOLDER = 'folder';
+
     public const RESOURCE_FILE = 'file';
 
     public function isPending(): bool

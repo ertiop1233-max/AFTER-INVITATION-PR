@@ -7,8 +7,8 @@ use App\Http\Requests\UploadCompleteRequest;
 use App\Http\Requests\UploadInitRequest;
 use App\Models\Event;
 use App\Models\Media;
-use App\Models\Submission;
 use App\Services\UploadService;
+use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,7 +22,7 @@ class UploadController extends Controller
     {
         $event = Event::where('upload_token', $token)->first();
 
-        if (!$event) {
+        if (! $event) {
             return response()->json([
                 'success' => false,
                 'message' => 'Event not found.',
@@ -46,13 +46,19 @@ class UploadController extends Controller
 
     public function init(UploadInitRequest $request): JsonResponse
     {
-        $submission = Submission::find($request->submission_id);
+        /** @var Event $event */
+        $event = $request->attributes->get('upload_event');
+        $submission = $event->submissions()->find($request->submission_id);
 
-        if (!$submission || !$submission->isDraft()) {
+        if (! $submission || ! $submission->isDraft()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Submission not found or already completed.',
             ], 404);
+        }
+
+        if ($event->isClosed() || $event->isUploadDeadlinePassed()) {
+            return $this->eventClosedResponse();
         }
 
         $allowedMimes = [
@@ -60,35 +66,24 @@ class UploadController extends Controller
             'video/mp4', 'video/quicktime', 'video/webm',
         ];
 
-        if (!in_array($request->mime_type, $allowedMimes)) {
+        if (! in_array($request->mime_type, $allowedMimes)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unsupported file type.',
             ], 422);
         }
 
-        $event = $submission->event;
-
-        if (str_starts_with($request->mime_type, 'image/') && !$event->allow_photos) {
+        if (str_starts_with($request->mime_type, 'image/') && ! $event->allow_photos) {
             return response()->json([
                 'success' => false,
                 'message' => 'Photos are not allowed for this event.',
             ], 422);
         }
 
-        if (str_starts_with($request->mime_type, 'video/') && !$event->allow_videos) {
+        if (str_starts_with($request->mime_type, 'video/') && ! $event->allow_videos) {
             return response()->json([
                 'success' => false,
                 'message' => 'Videos are not allowed for this event.',
-            ], 422);
-        }
-
-        $totalSize = $submission->media()->sum('file_size_bytes') + $request->file_size_bytes;
-
-        if ($totalSize > $event->max_submission_size_bytes) {
-            return response()->json([
-                'success' => false,
-                'message' => 'File exceeds remaining submission size limit.',
             ], 422);
         }
 
@@ -105,6 +100,11 @@ class UploadController extends Controller
             }
 
             return response()->json($response);
+        } catch (DomainException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -115,9 +115,15 @@ class UploadController extends Controller
 
     public function complete(UploadCompleteRequest $request): JsonResponse
     {
-        $media = Media::find($request->media_id);
+        /** @var Event $event */
+        $event = $request->attributes->get('upload_event');
+        if ($event->isClosed() || $event->isUploadDeadlinePassed()) {
+            return $this->eventClosedResponse();
+        }
 
-        if (!$media) {
+        $media = $event->media()->find($request->media_id);
+
+        if (! $media || ! $media->submission?->isDraft()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Media not found.',
@@ -130,7 +136,13 @@ class UploadController extends Controller
 
         try {
             $this->uploadService->completeUploadByLookup($media);
+
             return response()->json(['success' => true]);
+        } catch (DomainException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -147,9 +159,15 @@ class UploadController extends Controller
             'total_size' => ['required', 'integer', 'min:1'],
         ]);
 
-        $media = Media::find($request->media_id);
+        /** @var Event $event */
+        $event = $request->attributes->get('upload_event');
+        if ($event->isClosed() || $event->isUploadDeadlinePassed()) {
+            return $this->eventClosedResponse();
+        }
 
-        if (!$media) {
+        $media = $event->media()->find($request->media_id);
+
+        if (! $media || ! $media->submission?->isDraft() || $media->status !== Media::STATUS_UPLOADING) {
             return response()->json([
                 'success' => false,
                 'message' => 'Media not found.',
@@ -159,6 +177,19 @@ class UploadController extends Controller
         $chunkData = $request->getContent();
         $offset = (int) $request->offset;
         $totalSize = (int) $request->total_size;
+        $chunkLength = strlen($chunkData);
+        $maxChunkSize = config('memoryvault.upload_chunk_size', 8388608);
+
+        if ($chunkLength < 1
+            || $chunkLength > $maxChunkSize
+            || $totalSize !== $media->file_size_bytes
+            || $offset >= $totalSize
+            || $offset + $chunkLength > $totalSize) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid upload chunk size or byte range.',
+            ], 422);
+        }
 
         try {
             $result = $this->uploadService->processChunk($media, $chunkData, $offset, $totalSize);
@@ -168,6 +199,11 @@ class UploadController extends Controller
                 'completed' => $result['completed'],
                 'uploaded_bytes' => $result['uploaded_bytes'] ?? 0,
             ]);
+        } catch (DomainException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 409);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -180,12 +216,18 @@ class UploadController extends Controller
     {
         $request->validate([
             'media_id' => ['required', 'integer'],
-            'thumbnail_data' => ['required', 'string'],
+            'thumbnail_data' => ['required', 'string', 'max:2097152'],
         ]);
 
-        $media = Media::find($request->media_id);
+        /** @var Event $event */
+        $event = $request->attributes->get('upload_event');
+        if ($event->isClosed() || $event->isUploadDeadlinePassed()) {
+            return $this->eventClosedResponse();
+        }
 
-        if (!$media) {
+        $media = $event->media()->find($request->media_id);
+
+        if (! $media || ! $media->submission?->isDraft() || ! $media->isUploaded()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Media not found.',
@@ -198,6 +240,13 @@ class UploadController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid thumbnail data.',
+            ], 422);
+        }
+
+        if (strlen($thumbnailData) > 1572864) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Thumbnail data is too large.',
             ], 422);
         }
 
@@ -215,9 +264,22 @@ class UploadController extends Controller
             'duration_seconds' => ['required', 'integer', 'min:1', 'max:600'],
         ]);
 
-        $submission = Submission::find($request->submission_id);
+        /** @var Event $event */
+        $event = $request->attributes->get('upload_event');
+        if ($event->isClosed() || $event->isUploadDeadlinePassed()) {
+            return $this->eventClosedResponse();
+        }
 
-        if (!$submission || !$submission->isDraft()) {
+        if (! $event->allow_voice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Voice messages are not allowed for this event.',
+            ], 422);
+        }
+
+        $submission = $event->submissions()->find($request->submission_id);
+
+        if (! $submission || ! $submission->isDraft()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Submission not found.',
@@ -257,5 +319,14 @@ class UploadController extends Controller
                 'message' => 'Voice upload failed. Please try again.',
             ], 500);
         }
+    }
+
+    private function eventClosedResponse(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'This event is no longer accepting submissions.',
+            'closed' => true,
+        ], 410);
     }
 }

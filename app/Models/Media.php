@@ -26,6 +26,7 @@ class Media extends Model
         'status',
         'uploaded_at',
         'resumable_uri',
+        'uploaded_bytes',
     ];
 
     protected $casts = [
@@ -34,13 +35,17 @@ class Media extends Model
         'height' => 'integer',
         'duration_seconds' => 'integer',
         'uploaded_at' => 'datetime',
+        'uploaded_bytes' => 'integer',
     ];
 
     public const STATUS_UPLOADING = 'uploading';
+
     public const STATUS_UPLOADED = 'uploaded';
+
     public const STATUS_FAILED = 'failed';
 
     public const TYPE_PHOTO = 'photo';
+
     public const TYPE_VIDEO = 'video';
 
     public function submission(): BelongsTo

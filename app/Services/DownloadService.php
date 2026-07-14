@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Event;
 use App\Models\Media;
 use App\Models\Submission;
-use ZipStream\Option\Archive as ArchiveOptions;
 use ZipStream\ZipStream;
 
 class DownloadService
@@ -14,18 +13,17 @@ class DownloadService
         private readonly StorageService $storageService,
     ) {}
 
-    public function streamSubmissionZip(Submission $submission, string $outputName = null): void
+    public function streamSubmissionZip(Submission $submission, ?string $outputName = null): void
     {
         $this->disableOutputBuffering();
 
         $zipName = $outputName ?? "submission_{$submission->id}.zip";
 
-        $options = new ArchiveOptions();
-        $options->setSendHttpHeaders(true);
-        $options->setOutputName($zipName);
-        $options->setFlushOutput(true);
-
-        $zip = new ZipStream($options);
+        $zip = new ZipStream(
+            sendHttpHeaders: true,
+            outputName: $zipName,
+            flushOutput: true,
+        );
 
         $uploadedMedia = $submission->media()
             ->where('status', Media::STATUS_UPLOADED)
@@ -58,12 +56,11 @@ class DownloadService
 
         $zipName = "event_{$event->upload_slug}.zip";
 
-        $options = new ArchiveOptions();
-        $options->setSendHttpHeaders(true);
-        $options->setOutputName($zipName);
-        $options->setFlushOutput(true);
-
-        $zip = new ZipStream($options);
+        $zip = new ZipStream(
+            sendHttpHeaders: true,
+            outputName: $zipName,
+            flushOutput: true,
+        );
 
         $submissions = $event->submissions()
             ->where('status', Submission::STATUS_COMPLETED)
@@ -73,7 +70,14 @@ class DownloadService
             ->get();
 
         foreach ($submissions as $submission) {
-            $safeName = $this->sanitizeForZip($submission->contributor_name);
+            // Contributor names are not unique. Include the immutable submission ID
+            // so two people with the same display name cannot overwrite each
+            // other's entries in the generated archive.
+            $safeName = sprintf(
+                '%s-%d',
+                $this->sanitizeForZip($submission->contributor_name),
+                $submission->id,
+            );
 
             foreach ($submission->media as $media) {
                 $stream = $this->storageService->getFileStream($media->storage_id);
@@ -121,16 +125,16 @@ class DownloadService
     private function buildManifest(Submission $submission, $uploadedMedia): string
     {
         $lines = [];
-        $lines[] = "Memory Vault - Submission Manifest";
-        $lines[] = "==================================";
+        $lines[] = 'Memory Vault - Submission Manifest';
+        $lines[] = '==================================';
         $lines[] = "Submission ID: {$submission->id}";
         $lines[] = "Contributor: {$submission->contributor_name}";
         $lines[] = "Submitted: {$submission->submitted_at}";
         $lines[] = "Total Photos: {$submission->total_photos}";
         $lines[] = "Total Videos: {$submission->total_videos}";
         $lines[] = "Total Size: {$this->formatBytes($submission->total_size_bytes)}";
-        $lines[] = "";
-        $lines[] = "Files:";
+        $lines[] = '';
+        $lines[] = 'Files:';
 
         foreach ($uploadedMedia as $media) {
             $lines[] = "  - {$media->stored_filename} ({$media->media_type}, {$this->formatBytes($media->file_size_bytes)})";
@@ -141,34 +145,35 @@ class DownloadService
         }
 
         if ($submission->hasMessage()) {
-            $lines[] = "";
-            $lines[] = "Message included: message.txt";
+            $lines[] = '';
+            $lines[] = 'Message included: message.txt';
         }
 
-        return implode("\n", $lines) . "\n";
+        return implode("\n", $lines)."\n";
     }
 
     private function buildEventManifest(Event $event, $submissions): string
     {
         $lines = [];
-        $lines[] = "Memory Vault - Event Manifest";
-        $lines[] = "==============================";
+        $lines[] = 'Memory Vault - Event Manifest';
+        $lines[] = '==============================';
         $lines[] = "Event: {$event->title}";
         $lines[] = "Total Submissions: {$submissions->count()}";
-        $lines[] = "Generated: " . now()->toDateTimeString();
-        $lines[] = "";
-        $lines[] = "Submissions:";
+        $lines[] = 'Generated: '.now()->toDateTimeString();
+        $lines[] = '';
+        $lines[] = 'Submissions:';
 
         foreach ($submissions as $submission) {
             $lines[] = "  - {$submission->contributor_name} (ID: {$submission->id}, {$submission->total_photos} photos, {$submission->total_videos} videos)";
         }
 
-        return implode("\n", $lines) . "\n";
+        return implode("\n", $lines)."\n";
     }
 
     private function sanitizeForZip(string $name): string
     {
         $sanitized = preg_replace('/[^A-Za-z0-9_\-\s]/', '', $name);
+
         return trim($sanitized) ?: 'contributor';
     }
 
@@ -180,7 +185,8 @@ class DownloadService
             $bytes /= 1024;
             $i++;
         }
-        return round($bytes, 2) . ' ' . $units[$i];
+
+        return round($bytes, 2).' '.$units[$i];
     }
 
     private function disableOutputBuffering(): void

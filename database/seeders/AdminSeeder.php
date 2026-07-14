@@ -14,7 +14,7 @@ class AdminSeeder extends Seeder
         $email = config('memoryvault.admin.email');
         $password = config('memoryvault.admin.password');
 
-        if (!$email || !$password) {
+        if (! $email || ! $password) {
             throw new RuntimeException(
                 'ADMIN_EMAIL and ADMIN_PASSWORD must be configured in .env before seeding.'
             );

@@ -19,7 +19,7 @@ class AuthController extends Controller
     {
         $admin = Admin::where('email', $request->email)->first();
 
-        if (!$admin || !Hash::check($request->password, $admin->password)) {
+        if (! $admin || ! Hash::check($request->password, $admin->password)) {
             return back()
                 ->withInput($request->only('email'))
                 ->with('error', 'Invalid credentials.');
@@ -29,13 +29,16 @@ class AuthController extends Controller
             'admin_id' => $admin->id,
             'admin_login_at' => now(),
         ]);
+        $request->session()->regenerate();
 
         return redirect()->route('admin.dashboard');
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
-        session()->flush();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
         return redirect()->route('admin.login');
     }
 }

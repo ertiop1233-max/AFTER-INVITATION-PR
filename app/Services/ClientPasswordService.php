@@ -14,7 +14,7 @@ class ClientPasswordService
     {
         $key = config('memoryvault.client_key');
 
-        if (!$key) {
+        if (! $key) {
             throw new RuntimeException('MEMORYVAULT_CLIENT_KEY is not configured');
         }
 

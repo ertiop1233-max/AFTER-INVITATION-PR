@@ -15,11 +15,13 @@ class HealthController extends Controller
     {
         $health = $this->healthService->check();
 
+        $healthy = $health['database'] && $health['drive'];
+
         return response()->json([
-            'status' => $health['database'] && $health['drive'] ? 'healthy' : 'degraded',
+            'status' => $healthy ? 'healthy' : 'degraded',
             'database' => $health['database'],
             'drive' => $health['drive'],
             'smtp' => $health['smtp'],
-        ]);
+        ], $healthy ? 200 : 503);
     }
 }

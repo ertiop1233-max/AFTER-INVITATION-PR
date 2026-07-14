@@ -12,7 +12,7 @@ class UploadPageController extends Controller
     {
         $event = Event::where('upload_token', $token)->first();
 
-        if (!$event) {
+        if (! $event) {
             return view('upload.not-found');
         }
 
@@ -31,8 +31,8 @@ class UploadPageController extends Controller
 
         $maxBytes = $event->max_submission_size_bytes;
         $maxDisplay = $maxBytes >= 1073741824
-            ? number_format($maxBytes / 1073741824, 1) . ' GB'
-            : number_format($maxBytes / 1048576, 0) . ' MB';
+            ? number_format($maxBytes / 1073741824, 1).' GB'
+            : number_format($maxBytes / 1048576, 0).' MB';
 
         return view('upload.page', [
             'event' => $event,

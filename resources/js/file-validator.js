@@ -73,37 +73,60 @@ const fileValidator = {
     async generateImageThumbnail(file) {
         return new Promise((resolve) => {
             const img = new Image();
+            const objectUrl = URL.createObjectURL(file);
+            let settled = false;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                URL.revokeObjectURL(objectUrl);
+                resolve(value);
+            };
             img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const maxDim = 300;
-                let { width, height } = img;
+                try {
+                    const canvas = document.createElement('canvas');
+                    const maxDim = 300;
+                    let { width, height } = img;
 
-                if (width > height) {
-                    if (width > maxDim) {
-                        height = (height * maxDim) / width;
-                        width = maxDim;
-                    }
-                } else {
-                    if (height > maxDim) {
+                    if (width > height) {
+                        if (width > maxDim) {
+                            height = (height * maxDim) / width;
+                            width = maxDim;
+                        }
+                    } else if (height > maxDim) {
                         width = (width * maxDim) / height;
                         height = maxDim;
                     }
-                }
 
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', 0.7));
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    finish(canvas.toDataURL('image/jpeg', 0.7));
+                } catch (error) {
+                    finish(null);
+                }
             };
-            img.onerror = () => resolve(null);
-            img.src = URL.createObjectURL(file);
+            img.onerror = () => finish(null);
+            img.src = objectUrl;
         });
     },
 
     async generateVideoThumbnail(file) {
         return new Promise((resolve) => {
             const video = document.createElement('video');
+            const objectUrl = URL.createObjectURL(file);
+            let settled = false;
+            let timeout = null;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                if (timeout) clearTimeout(timeout);
+                video.removeAttribute('src');
+                video.load();
+                URL.revokeObjectURL(objectUrl);
+                resolve(value);
+            };
+            timeout = setTimeout(() => finish(null), 10000);
             video.preload = 'metadata';
             video.muted = true;
             video.playsInline = true;
@@ -113,31 +136,33 @@ const fileValidator = {
             };
 
             video.onseeked = () => {
-                const canvas = document.createElement('canvas');
-                const maxDim = 300;
-                let { videoWidth: width, videoHeight: height } = video;
+                try {
+                    const canvas = document.createElement('canvas');
+                    const maxDim = 300;
+                    let { videoWidth: width, videoHeight: height } = video;
 
-                if (width > height) {
-                    if (width > maxDim) {
-                        height = (height * maxDim) / width;
-                        width = maxDim;
-                    }
-                } else {
-                    if (height > maxDim) {
+                    if (width > height) {
+                        if (width > maxDim) {
+                            height = (height * maxDim) / width;
+                            width = maxDim;
+                        }
+                    } else if (height > maxDim) {
                         width = (width * maxDim) / height;
                         height = maxDim;
                     }
-                }
 
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', 0.7));
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, width, height);
+                    finish(canvas.toDataURL('image/jpeg', 0.7));
+                } catch (error) {
+                    finish(null);
+                }
             };
 
-            video.onerror = () => resolve(null);
-            video.src = URL.createObjectURL(file);
+            video.onerror = () => finish(null);
+            video.src = objectUrl;
         });
     },
 

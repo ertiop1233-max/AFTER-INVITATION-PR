@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateSubmissionStartRequest;
 use App\Http\Requests\FinalizeSubmissionRequest;
 use App\Models\Event;
+use App\Models\Media;
 use App\Services\SubmissionService;
 use App\Services\UploadService;
+use DomainException;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class SubmissionController extends Controller
 {
@@ -20,9 +21,10 @@ class SubmissionController extends Controller
 
     public function start(CreateSubmissionStartRequest $request): JsonResponse
     {
-        $event = Event::where('upload_token', $request->event_token)->first();
+        /** @var Event|null $event */
+        $event = $request->attributes->get('upload_event');
 
-        if (!$event) {
+        if (! $event || ! hash_equals($event->upload_token, $request->event_token)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Event not found.',
@@ -76,9 +78,20 @@ class SubmissionController extends Controller
 
     public function finalize(FinalizeSubmissionRequest $request): JsonResponse
     {
-        $submission = $this->submissionService->findSubmissionById($request->submission_id);
+        /** @var Event $event */
+        $event = $request->attributes->get('upload_event');
 
-        if (!$submission) {
+        if ($event->isClosed() || $event->isUploadDeadlinePassed()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This event is no longer accepting submissions.',
+                'closed' => true,
+            ], 410);
+        }
+
+        $submission = $event->submissions()->find($request->submission_id);
+
+        if (! $submission) {
             return response()->json([
                 'success' => false,
                 'message' => 'Submission not found. Please start a new submission.',
@@ -91,6 +104,27 @@ class SubmissionController extends Controller
                 'submission_id' => $submission->id,
                 'message' => 'Submission already finalized.',
             ]);
+        }
+
+        if ($request->filled('written_message') && ! $event->allow_messages) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Written messages are not allowed for this event.',
+            ], 422);
+        }
+
+        if ($request->filled('voice_data') && ! $event->allow_voice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Voice messages are not allowed for this event.',
+            ], 422);
+        }
+
+        if ($submission->media()->where('status', '!=', Media::STATUS_UPLOADED)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'All media uploads must finish before finalizing.',
+            ], 409);
         }
 
         $voiceData = null;
@@ -132,7 +166,14 @@ class SubmissionController extends Controller
             ];
         }
 
-        $submission = $this->submissionService->finalize($submission, $request->written_message, $voiceData);
+        try {
+            $submission = $this->submissionService->finalize($submission, $request->written_message, $voiceData);
+        } catch (DomainException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 409);
+        }
 
         return response()->json([
             'success' => true,
