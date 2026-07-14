@@ -74,9 +74,9 @@ php -i | grep -E "upload_max_filesize|post_max_size"
 If Plan B: chunk size (8MB) must be below both values. If too low, reduce `MEMORYVAULT_UPLOAD_CHUNK_SIZE`.
 
 ### V7: Cron Support
-Add a test cron job:
+Verify the cron job configured in SETUP_GUIDE.md Section 2.6 is active:
 ```
-* * * * * /opt/alt/php83/usr/bin/php ~/memoryvault/artisan schedule:run >> /dev/null 2>&1
+*/5 * * * * /opt/alt/php83/usr/bin/php ~/memoryvault/artisan schedule:run >> /dev/null 2>&1
 ```
 Check that scheduled tasks execute by monitoring `storage/logs/laravel-*.log`.
 

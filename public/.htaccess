@@ -30,8 +30,13 @@
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Permissions-Policy "camera=(), microphone=(self), geolocation=()"
     Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://drive.google.com; media-src 'self' blob:; connect-src 'self' https://www.googleapis.com https://upload.google.com; font-src 'self'; frame-ancestors 'none'"
 </IfModule>
 
-<Files .env>
+<FilesMatch "\.(env|json|lock|md|yml|yaml|xml|log)$">
+    Require all denied
+</FilesMatch>
+
+<Files artisan>
     Require all denied
 </Files>

@@ -57,10 +57,26 @@
                 <h3>No media</h3>
             </div>
         @else
+            @php
+                $mediaItems = $submission->media->map(fn($m) => [
+                    'type' => $m->isVideo() ? 'video' : 'image',
+                    'url' => route('client.media.view', $m),
+                    'thumbnail_url' => $m->thumbnail_storage_id ? route('client.media.thumbnail', $m) : null,
+                    'name' => $m->original_filename,
+                    'mime_type' => $m->mime_type,
+                    'download_url' => route('client.media.view', $m),
+                ])->values()->all();
+            @endphp
             <div class="gallery-grid">
-                @php($mediaItems = $submission->media->map(fn($m) => ['type' => $m->isVideo() ? 'video' : 'image', 'url' => route('client.media.view', $m), 'name' => $m->original_filename])->values())
                 @foreach($submission->media as $media)
-                    <div class="gallery-item" onclick="mediaViewer.open(@json($mediaItems), {{ $loop->index }})">
+                    <div
+                        class="gallery-item"
+                        onclick="mediaViewer.open(@json($mediaItems), {{ $loop->index }})"
+                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();mediaViewer.open(@json($mediaItems), {{ $loop->index }})}"
+                        tabindex="0"
+                        role="button"
+                        aria-label="View {{ $media->original_filename }}"
+                    >
                         @if($media->thumbnail_storage_id)
                             <img src="{{ route('client.media.thumbnail', $media) }}" alt="{{ $media->original_filename }}" loading="lazy">
                         @else

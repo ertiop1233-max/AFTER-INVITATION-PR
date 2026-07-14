@@ -1,0 +1,1 @@
+import{m}from"./module.esm-DdaDH_LP.js";m.start();window.Alpine=m;
